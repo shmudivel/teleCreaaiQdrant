@@ -64,11 +64,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             result = crew.kickoff()
-
-            # Access the final text correctly
-            # Assuming the final text is stored in result["final_answer"]
-            final_text = result.get("final_answer", "Не удалось получить окончательный ответ.")
-
+            
+            # Debug: Print the result
+            logger.info(f"Crew kickoff result: {result}")
+            
+            # The result appears to be the final text directly
+            final_text = str(result)
+            
+            # Send the final text to Telegram
             await update.message.reply_text(final_text)
             
             context.user_data['messages'] = []

@@ -74,7 +74,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = crew.kickoff()
             
             # Send the result back to user
-            await update.message.reply_text(result)
+            await update.message.reply_text(result['final_answer'])
             
             # Clear the stored messages
             context.user_data['messages'] = []

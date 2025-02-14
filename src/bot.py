@@ -35,48 +35,42 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages and generate content using CrewAI."""
-    # Store user's message in context
     if 'messages' not in context.user_data:
         context.user_data['messages'] = []
     
     context.user_data['messages'].append(update.message.text)
     
-    # If we have received both context and target audience
     if len(context.user_data['messages']) >= 2:
         await update.message.reply_text("Генерирую контент, пожалуйста подождите...")
         
         try:
-            # Get the stored messages
             query_context = context.user_data['messages'][0]
             query_target_audience = context.user_data['messages'][1]
             
-            # Create tasks and agents
             tasks = contentSocialMediaTasks()
             agents = contentSocialMediaAgents()
             
-            # Initialize agents
             general_agent = agents.general_content_social_media_agent()
             editor_agent = agents.editor_social_media_agent()
             
-            # Create tasks
             research_task = tasks.research_task(general_agent, query_context, query_target_audience)
             industry_analysis_task = tasks.industry_analysis_task(editor_agent, query_context, query_target_audience)
             
-            # Set task context
             industry_analysis_task.context = [research_task]
             
-            # Create and run crew
             crew = Crew(
                 agents=[general_agent, editor_agent],
                 tasks=[research_task, industry_analysis_task]
             )
             
             result = crew.kickoff()
+
+            # Access the final text correctly
+            # Assuming the final text is stored in result["final_answer"]
+            final_text = result.get("final_answer", "Не удалось получить окончательный ответ.")
+
+            await update.message.reply_text(final_text)
             
-            # Send the result back to user
-            await update.message.reply_text(result['final_answer'])
-            
-            # Clear the stored messages
             context.user_data['messages'] = []
             
         except Exception as e:

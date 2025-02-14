@@ -22,10 +22,10 @@ def get_vector_store():
 
 class VectorDBToolset:
     def __init__(self):
-        # Same approach as in main.py:
+        # Initialize the Qdrant-based Vector Store
         self.vector_store = get_vector_store()
         
-        # Build RetrievalQA chain
+        # Build a RetrievalQA chain with an OpenAI model
         self.qa_chain = RetrievalQA.from_chain_type(
             llm=OpenAI(),
             chain_type="stuff",
@@ -35,8 +35,11 @@ class VectorDBToolset:
     @tool
     def vector_db_query(self, query: str) -> str:
         """
-        Query the Qdrant vector store for relevant context
-        and get an answer from the LLM.
+        Query the Qdrant vector store for relevant context and get an answer from the LLM.
+
+        IMPORTANT:
+        - Do NOT pass 'self' in the JSON input. Just pass {"query": "<text>"}
+        - Python will automatically handle the 'self' argument internally.
         """
         return self.qa_chain.run(query)
 

@@ -1,0 +1,11 @@
+teleCreaaiQdrant/
+├── .env
+├── requirements.txt
+└── src/
+    ├── __init__.py
+    ├── main.py
+    ├── bot.py
+    ├── agents.py
+    ├── tasks.py
+    ├── tools.py
+    └── vector_db_tool.py 

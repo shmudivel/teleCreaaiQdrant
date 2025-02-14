@@ -1,8 +1,6 @@
 from textwrap import dedent
 from crewai import Agent
-
-from tools import ExaSearchToolset
-from vector_db_tool import VectorDBToolset 
+from .vector_db_tool import VectorDBToolset
 
 class contentSocialMediaAgents():
     def general_content_social_media_agent(self):
@@ -10,8 +8,6 @@ class contentSocialMediaAgents():
       return Agent(
         role="Главный редактор социальных медиа",
         goal='Задача чтоб текст был понятен и интересен целевой аудитории и людям которые будут читать стало интересно еще что-то почитать у Сергея Черненко',
-        # tools=ExaSearchToolset.tools(),
-        # tools=[],
         tools=vdb_tools.tools(), 
         backstory=dedent("""\
           Вы - главный редактор социальных медиа. Ваша задача - создать текст, который будет понятен и интересен целевой аудитории, а также привлечет внимание к Сергею Черненко.
@@ -24,7 +20,6 @@ class contentSocialMediaAgents():
       return Agent(
         role='Редактор социальных медиа',
         goal='Твоя цель чтоб текст соответвовал целевой аудитории, и соответствовал стандартам социальных сетей',
-        # tools=ExaSearchToolset.tools(),
         tools=vdb_tools.tools(),
         backstory=dedent("""\
           Вы специалист по социальным медиа. Ваша задача - провести тщательную редактуру поста для социальных сетей. На основе текста, скрипта для видео на YouTube и целевой аудитории.

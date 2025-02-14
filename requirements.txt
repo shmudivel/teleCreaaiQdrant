@@ -1,0 +1,20 @@
+# Telegram Bot
+python-telegram-bot>=20.8
+
+# Vector Database
+qdrant-client>=1.7.0
+
+# AI and Language Models
+crewai>=0.1.29
+langchain>=0.1.0
+langchain-openai>=0.0.5
+openai>=1.12.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+asyncio>=3.4.3
+
+# Optional - for future voice/image processing
+# SpeechRecognition>=3.10.0
+# Pillow>=10.0.0 

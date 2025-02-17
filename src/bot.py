@@ -17,20 +17,20 @@ logger = logging.getLogger(__name__)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     await update.message.reply_text(
-        'Привет! Я бот-ассистент Сергея Черненко. Я помогу вам создать контент для социальных сетей.\n\n'
-        'Для начала работы, отправьте мне:\n'
-        '1. Контекст или скрипт для поста\n'
-        '2. Описание целевой аудитории\n\n'
-        'Используйте команду /help для получения дополнительной информации.'
+        'Здравствуйте! Я помогу вам создавать информативные комментарии для соцсетей.\n\n'
+        'Чтобы начать, отправьте мне:\n'
+        '1. Комментарий, на который хотите ответить\n'
+        'Команда /help - если нужна помощь\n\n'
+        '*или другая соцсеть'
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /help is issued."""
     await update.message.reply_text(
-        'Доступные команды:\n'
-        '/start - Начать работу с ботом\n'
+        'Как я работаю:\n'
+        '/start - Начать работу\n'
         '/help - Показать это сообщение\n\n'
-        'Для создания контента просто отправьте мне текст с описанием того, что вы хотите создать.'
+        'Отправьте комментарий и укажите соцсеть - я помогу составить информативный ответ'
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -41,11 +41,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['messages'].append(update.message.text)
     
     if len(context.user_data['messages']) >= 2:
-        await update.message.reply_text("Генерирую контент, пожалуйста подождите...")
+        await update.message.reply_text("Секундочку, формулирую ответ... ✍️")
         
         try:
-            query_context = context.user_data['messages'][0]
-            query_target_audience = context.user_data['messages'][1]
+            original_comment = context.user_data['messages'][0]
+            social_platform = context.user_data['messages'][1]
             
             tasks = contentSocialMediaTasks()
             agents = contentSocialMediaAgents()
@@ -53,8 +53,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             general_agent = agents.general_content_social_media_agent()
             editor_agent = agents.editor_social_media_agent()
             
-            research_task = tasks.research_task(general_agent, query_context, query_target_audience)
-            industry_analysis_task = tasks.industry_analysis_task(editor_agent, query_context, query_target_audience)
+            research_task = tasks.research_task(general_agent, original_comment, social_platform)
+            industry_analysis_task = tasks.industry_analysis_task(editor_agent, original_comment, social_platform)
             
             industry_analysis_task.context = [research_task]
             
@@ -79,12 +79,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error generating content: {str(e)}")
             await update.message.reply_text(
-                "Произошла ошибка при генерации контента. Пожалуйста, попробуйте еще раз."
+                "Упс! Что-то пошло не так 😅 Давайте попробуем еще раз?"
             )
             context.user_data['messages'] = []
     else:
         await update.message.reply_text(
-            "Теперь отправьте мне описание целевой аудитории."
+            "Отлично! Теперь укажите, из какой соцсети комментарий (например: ВКонтакте, Telegram, Дзен) 🌐"
         )
 
 def main():

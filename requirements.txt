@@ -17,4 +17,6 @@ asyncio>=3.4.3
 
 # Optional - for future voice/image processing
 # SpeechRecognition>=3.10.0
-# Pillow>=10.0.0 
+# Pillow>=10.0.0
+
+# Add any other dependencies your project needs 

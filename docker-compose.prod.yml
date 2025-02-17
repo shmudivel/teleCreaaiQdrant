@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    env_file: .env.prod
+    environment:
+      - PYTHONPATH=/app
+    restart: always
+    depends_on:
+      - qdrant
+    command: ["python", "-m", "src.main"]
+
+  qdrant:
+    image: qdrant/qdrant
+    restart: always
+    volumes:
+      - qdrant_prod_data:/qdrant/storage
+
+volumes:
+  qdrant_prod_data: 

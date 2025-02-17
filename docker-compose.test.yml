@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    env_file: .env.test
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - qdrant
+    command: ["python", "-m", "src.main"]
+
+  qdrant:
+    image: qdrant/qdrant
+    ports:
+      - "6334:6333"  # Different port for test environment
+    volumes:
+      - qdrant_test_data:/qdrant/storage
+
+volumes:
+  qdrant_test_data: 

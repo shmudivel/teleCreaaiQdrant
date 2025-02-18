@@ -68,7 +68,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"Crew kickoff result: {result}")
             
             # The result appears to be the final text directly
-            final_text = f"{result}\n\nПодпишись на наш телеграм канал @https://t.me/corphacker"
+            final_text = f"{result}\n\ t.me/corphacker"
             
             # Send the final text to Telegram
             await update.message.reply_text(final_text)

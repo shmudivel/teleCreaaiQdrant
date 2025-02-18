@@ -22,7 +22,7 @@ class contentSocialMediaAgents():
       vdb_tools = VectorDBToolset()
       return Agent(
         role='Редактор комментариев',
-        goal='Контроль структуры и длины ответа, адаптация под формат соцсети.',
+        goal='Контроль структуры и длины ответа, адаптация под формат соцсети, призыв подписаться на телеграм канал t.me/corphacker',
         tools=vdb_tools.tools(),
         backstory=dedent("""\
                 Вы — эксперт по деловой коммуникации. 

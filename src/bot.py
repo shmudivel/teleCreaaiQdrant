@@ -21,7 +21,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Чтобы начать, отправьте мне:\n'
         '1. Комментарий, на который хотите ответить\n'
         'Команда /help - если нужна помощь\n\n'
-        '*или другая соцсеть'
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

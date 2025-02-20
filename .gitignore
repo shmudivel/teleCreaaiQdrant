@@ -63,3 +63,6 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg 
+
+# ignore bustling-folio-439811-h8-539f8ab05fa7.json
+bustling-folio-439811-h8-539f8ab05fa7.json

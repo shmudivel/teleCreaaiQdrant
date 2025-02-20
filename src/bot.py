@@ -6,6 +6,9 @@ from crewai import Crew
 from .tasks import contentSocialMediaTasks
 from .agents import contentSocialMediaAgents
 import logging
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from datetime import datetime
 
 # Enable logging
 logging.basicConfig(
@@ -13,6 +16,97 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+def save_to_google_drive(text, comment, platform):
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            './bustling-folio-439811-h8-539f8ab05fa7.json',
+            scopes=['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
+        )
+
+        drive_service = build('drive', 'v3', credentials=credentials)
+
+        # Create or get the folder
+        folder_name = "Social Media Responses"
+        folders_result = drive_service.files().list(
+            q=f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'",
+            spaces='drive',
+            fields='files(id, name)'
+        ).execute()
+
+        if not folders_result.get('files'):
+            folder_metadata = {
+                'name': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder'
+            }
+            folder = drive_service.files().create(
+                body=folder_metadata,
+                fields='id'
+            ).execute()
+            folder_id = folder.get('id')
+        else:
+            folder_id = folders_result.get('files')[0].get('id')
+
+        # Create a new document with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        doc_name = f"Response_{platform}_{timestamp}"
+        
+        file_metadata = {
+            'name': doc_name,
+            'mimeType': 'application/vnd.google-apps.document',
+            'parents': [folder_id]
+        }
+
+        file = drive_service.files().create(
+            body=file_metadata,
+            fields='id, name, webViewLink'
+        ).execute()
+
+        # Share the file
+        permission = {
+            'type': 'user',
+            'role': 'writer',
+            'emailAddress': 'shmudivel@gmail.com'
+        }
+
+        drive_service.permissions().create(
+            fileId=file['id'],
+            body=permission,
+            sendNotificationEmail=False
+        ).execute()
+
+        # Format the content
+        content = f"""Original Comment ({platform}):
+{comment}
+
+Generated Response:
+{text}
+
+Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
+
+        # Update the document content using Docs API
+        docs_service = build('docs', 'v1', credentials=credentials)
+        docs_service.documents().batchUpdate(
+            documentId=file['id'],
+            body={
+                'requests': [
+                    {
+                        'insertText': {
+                            'location': {
+                                'index': 1
+                            },
+                            'text': content
+                        }
+                    }
+                ]
+            }
+        ).execute()
+
+        return file.get('webViewLink')
+
+    except Exception as e:
+        logger.error(f"Error saving to Google Drive: {str(e)}")
+        return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
@@ -63,16 +157,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             result = crew.kickoff()
-            
-            # Debug: Print the result
-            logger.info(f"Crew kickoff result: {result}")
-            
-            # The result appears to be the final text directly
-            # final_text = f"{result}\n\ t.me/corphacker"
             final_text = str(result)
             
-            # Send the final text to Telegram
+            # Save to Google Drive and get the link
+            doc_link = save_to_google_drive(final_text, original_comment, social_platform)
+            
+            # Send the response and document link to Telegram
             await update.message.reply_text(final_text)
+            if doc_link:
+                await update.message.reply_text(
+                    f"Ответ сохранен в Google Docs: {doc_link}"
+                )
             
             context.user_data['messages'] = []
             

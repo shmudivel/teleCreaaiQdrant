@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY src/ ./src/
 COPY .env.prod .
+COPY bustling-folio-439811-h8-539f8ab05fa7.json .
 
 # Set Python path to include the app directory
 ENV PYTHONPATH=/app

@@ -181,7 +181,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         doc_id = extract_doc_id(current_message)
         if not doc_id:
             await update.message.reply_text(
-                "Пожалуйста, отправьте корректную ссылку на Google Doc 📄"
+                "Пожалуйста, отправьте корректную ссылку на Google Doc с YouTube-контентом 📄"
             )
             return
         
@@ -195,46 +195,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         context.user_data['messages'].append(doc_content)
         await update.message.reply_text(
-            "Отлично! Теперь укажите, из какой соцсети комментарий (например: ВКонтакте, Telegram, Дзен) 🌐"
+            "Отлично! Сейчас создам посты для Дзен и VC.ru... ✍️"
         )
-    else:
-        context.user_data['messages'].append(current_message)
-        
-    if len(context.user_data['messages']) >= 2:
-        await update.message.reply_text("Секундочку, формулирую ответ... ✍️")
         
         try:
-            original_comment = context.user_data['messages'][0]
-            social_platform = context.user_data['messages'][1]
+            youtube_content = context.user_data['messages'][0]
             
             tasks = contentSocialMediaTasks()
             agents = contentSocialMediaAgents()
             
-            general_agent = agents.general_content_social_media_agent()
-            editor_agent = agents.editor_social_media_agent()
+            content_agent = agents.content_adaptation_agent()
+            dzen_agent = agents.dzen_specialist_agent()
+            vc_agent = agents.vc_specialist_agent()
             
-            research_task = tasks.research_task(general_agent, original_comment, social_platform)
-            industry_analysis_task = tasks.industry_analysis_task(editor_agent, original_comment, social_platform)
+            # Analyze content first
+            analysis_task = tasks.content_analysis_task(content_agent, youtube_content)
             
-            industry_analysis_task.context = [research_task]
+            # Create posts for each platform
+            dzen_task = tasks.create_dzen_post_task(dzen_agent, analysis_task.output, youtube_content)
+            vc_task = tasks.create_vc_post_task(vc_agent, analysis_task.output, youtube_content)
             
             crew = Crew(
-                agents=[general_agent, editor_agent],
-                tasks=[research_task, industry_analysis_task]
+                agents=[content_agent, dzen_agent, vc_agent],
+                tasks=[analysis_task, dzen_task, vc_task]
             )
             
             result = crew.kickoff()
-            final_text = str(result)
             
-            # Save to Google Drive and get the link
-            doc_link = save_to_google_drive(final_text, original_comment, social_platform)
+            # Save both posts to Google Drive
+            dzen_link = save_to_google_drive(dzen_task.output, youtube_content, "Дзен")
+            vc_link = save_to_google_drive(vc_task.output, youtube_content, "VC.ru")
             
-            # Send the response and document link to Telegram
-            await update.message.reply_text(final_text)
-            if doc_link:
-                await update.message.reply_text(
-                    f"Ответ сохранен в Google Docs: {doc_link}"
-                )
+            # Send the results
+            await update.message.reply_text("✅ Посты готовы!")
+            
+            if dzen_link:
+                await update.message.reply_text(f"Пост для Дзен: {dzen_link}")
+            if vc_link:
+                await update.message.reply_text(f"Пост для VC.ru: {vc_link}")
             
             context.user_data['messages'] = []
             
@@ -244,10 +242,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Упс! Что-то пошло не так 😅 Давайте попробуем еще раз?"
             )
             context.user_data['messages'] = []
-    else:
-        await update.message.reply_text(
-            "Отлично! Теперь укажите, из какой соцсети комментарий (например: ВКонтакте, Telegram, Дзен) 🌐"
-        )
 
 def main():
     """Start the bot."""

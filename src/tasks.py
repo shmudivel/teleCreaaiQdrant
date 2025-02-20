@@ -3,94 +3,99 @@ from crewai import Task
 
 
 class contentSocialMediaTasks():
+    def content_analysis_task(self, agent, youtube_content):
+        return Task(
+            description=dedent(f"""\
+                Анализ YouTube-контента для адаптации:
 
+                1. Основной анализ
+                - Определить главную тему и ключевые идеи
+                - Выделить основные тезисы и аргументы
+                - Отметить важные цитаты или данные
 
-  def research_task(self, agent, original_comment, social_platform):
-    return Task(
-      description=dedent(f"""\
-            Создание ответа на комментарий в соцсети:
+                2. Структурирование
+                - Разбить контент на логические блоки
+                - Выделить введение, основную часть, заключение
+                - Определить ключевые моменты для разных платформ
 
-            1. Адресация комментария
-            - Вежливо отреагируйте на основной посыл
-            - Покажите понимание позиции автора
-            - Сформулируйте ясный ответ на вопрос/проблему
-
-            2. Полезная информация
-            - Приведите 1-2 ключевых факта из базы знаний
-            - Используйте конкретные примеры или данные
-            - Сохраняйте информативность и краткость
-
-            3. Призыв к действию
-            - упоменуть что ссылка на телеграм канал t.me/corphacker
-            - Используйте естественную, ненавязчивую форму
-
-            Ограничения:
-            - Ответ не должен быть длиннее исходного комментария
-            - Избегайте маркетинговых формулировок
-
-            Исходный комментарий: {original_comment}
-            Платформа: {social_platform}"""),
-      expected_output=dedent(f"""\
-        Ответ из трёх логических блоков, заканчивающийся призывом подписаться.
-        Максимальная длина: {len(original_comment.split())} слов."""),
-      agent=agent,
-      async_execution=False
-    )
+                Исходный контент:
+                {youtube_content}"""),
+            expected_output=dedent("""\
+                Структурированный анализ контента с выделением:
+                - Ключевых тезисов
+                - Основных данных
+                - Важных цитат
+                - Потенциальных заголовков"""),
+            agent=agent
+        )
     
-  def industry_analysis_task(self, agent, original_comment, social_platform):
-    return Task(
-      description=dedent(f"""\
-            Финальная доработка ответа:
-            
-            1. Проверка структуры
-            - Соответствие трёхблочной структуре
-            - Наличие полезной информации из базы
-            - Естественный призыв к подписке
-            
-            2. Контроль длины
-            - Сравнение длины с исходным комментарием
-            - Сокращение при превышении длины
-            - Удаление избыточных формулировок
+    def create_dzen_post_task(self, agent, content_analysis, youtube_content):
+        return Task(
+            description=dedent(f"""\
+                Создание поста для Дзен на основе YouTube-контента:
 
-            3. Адаптация под платформу
-            - Проверка уместности стиля для {social_platform}
+                1. Структура поста
+                - Создать цепляющий заголовок
+                - Написать engaging вступление
+                - Разбить текст на читабельные блоки
+                - Добавить подзаголовки
 
-            Исходный комментарий: {original_comment}"""),
-      expected_output=dedent("""\
-        Краткий ответ, соответствующий требованиям платформы и 
-        не превышающий длину исходного комментария."""),
-      async_execution=True,
-      agent=agent
-    )
+                2. Стиль и формат
+                - Адаптировать под формат Дзен
+                - Использовать разговорный стиль
+                - Добавить элементы сторителлинга
+                - Включить призыв к действию
+
+                3. Оптимизация
+                - Добавить ключевые слова
+                - Оптимизировать длину абзацев
+                - Включить призыв подписаться на канал
+
+                Исходный контент:
+                {youtube_content}
+
+                Анализ контента:
+                {content_analysis}"""),
+            expected_output=dedent("""\
+                Готовый пост для Дзен с:
+                - Цепляющим заголовком
+                - Структурированным текстом
+                - Призывом к действию"""),
+            agent=agent
+        )
     
-#   def meeting_strategy_task(self, agent, meeting_context, meeting_objective):
-#     return Task(
-# 			description=dedent(f"""\
-# 				Develop strategic talking points, questions, and discussion angles
-# 				for the meeting based on the research and industry analysis conducted
+    def create_vc_post_task(self, agent, content_analysis, youtube_content):
+        return Task(
+            description=dedent(f"""\
+                Создание профессионального поста для VC.ru:
 
-# 				Meeting Context: {meeting_context}
-# 				Meeting Objective: {meeting_objective}"""),
-# 			expected_output=dedent("""\
-# 				Complete report with a list of key talking points, strategic questions
-# 				to ask to help achieve the meetings objective during the meeting."""),
-# 			agent=agent
-# 		)
-    
-#   def summary_and_briefing_task(self, agent, meeting_context, meeting_objective):
-#     return Task(
-# 			description=dedent(f"""\
-# 				Compile all the research findings, industry analysis, and strategic
-# 				talking points into a concise, comprehensive briefing document for
-# 				the meeting.
-# 				Ensure the briefing is easy to digest and equips the meeting
-# 				participants with all necessary information and strategies.
+                1. Структура
+                - Создать профессиональный заголовок
+                - Написать краткое введение
+                - Структурировать основной контент
+                - Добавить подзаголовки и списки
 
-# 				Meeting Context: {meeting_context}
-# 				Meeting Objective: {meeting_objective}"""),
-# 			expected_output=dedent("""\
-# 				A well-structured briefing document that includes sections for
-# 				participant bios, industry overview, talking points, and
-# 				strategic recommendations."""),
-# 			agent=agent
-# 		)
+                2. Адаптация контента
+                - Фокус на бизнес-аспектах
+                - Использовать профессиональную лексику
+                - Добавить статистику и данные
+                - Включить экспертные мнения
+
+                3. Форматирование
+                - Оптимизировать для удобного чтения
+                - Добавить key takeaways
+                - Включить призыв к обсуждению
+
+                Исходный контент:
+                {youtube_content}
+
+                Анализ контента:
+                {content_analysis}"""),
+            expected_output=dedent("""\
+                Готовый пост для VC.ru с:
+                - Профессиональным заголовком
+                - Структурированной информацией
+                - Бизнес-фокусом
+                - Призывом к обсуждению"""),
+            agent=agent
+        )

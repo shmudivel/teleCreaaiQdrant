@@ -9,6 +9,7 @@ import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime
+import re
 
 # Enable logging
 logging.basicConfig(
@@ -16,6 +17,48 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+def extract_doc_id(url):
+    """Extract Google Doc ID from URL."""
+    patterns = [
+        r'/document/d/([a-zA-Z0-9-_]+)',  # Standard Doc URL
+        r'docs.google.com/document/d/([a-zA-Z0-9-_]+)',  # Shared Doc URL
+        r'^([a-zA-Z0-9-_]+)$'  # Direct ID
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+def read_from_google_doc(doc_id):
+    """Read content from a Google Doc."""
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            './bustling-folio-439811-h8-539f8ab05fa7.json',
+            scopes=['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
+        )
+
+        # Build the Docs API service
+        docs_service = build('docs', 'v1', credentials=credentials)
+        
+        # Get the document content
+        document = docs_service.documents().get(documentId=doc_id).execute()
+        
+        # Extract text from the document
+        doc_content = ''
+        for element in document.get('body').get('content'):
+            if 'paragraph' in element:
+                for para_element in element.get('paragraph').get('elements'):
+                    if 'textRun' in para_element:
+                        doc_content += para_element.get('textRun').get('content')
+        
+        return doc_content.strip()
+
+    except Exception as e:
+        logger.error(f"Error reading from Google Doc: {str(e)}")
+        return None
 
 def save_to_google_drive(text, comment, platform):
     try:
@@ -113,7 +156,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         'Здравствуйте! Я помогу вам создавать информативные комментарии для соцсетей.\n\n'
         'Чтобы начать, отправьте мне:\n'
-        '1. Комментарий, на который хотите ответить\n'
+        '1. Ссылку на Google Doc с комментарием\n'
         'Команда /help - если нужна помощь\n\n'
     )
 
@@ -123,7 +166,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Как я работаю:\n'
         '/start - Начать работу\n'
         '/help - Показать это сообщение\n\n'
-        'Отправьте комментарий и укажите соцсеть - я помогу составить информативный ответ'
+        'Отправьте ссылку на Google Doc с комментарием и укажите соцсеть - я помогу составить информативный ответ'
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,8 +174,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'messages' not in context.user_data:
         context.user_data['messages'] = []
     
-    context.user_data['messages'].append(update.message.text)
+    current_message = update.message.text
     
+    if len(context.user_data['messages']) == 0:
+        # First message should be a Google Doc link
+        doc_id = extract_doc_id(current_message)
+        if not doc_id:
+            await update.message.reply_text(
+                "Пожалуйста, отправьте корректную ссылку на Google Doc 📄"
+            )
+            return
+        
+        # Read content from the Google Doc
+        doc_content = read_from_google_doc(doc_id)
+        if not doc_content:
+            await update.message.reply_text(
+                "Не удалось прочитать документ. Проверьте ссылку и права доступа 🔒"
+            )
+            return
+        
+        context.user_data['messages'].append(doc_content)
+        await update.message.reply_text(
+            "Отлично! Теперь укажите, из какой соцсети комментарий (например: ВКонтакте, Telegram, Дзен) 🌐"
+        )
+    else:
+        context.user_data['messages'].append(current_message)
+        
     if len(context.user_data['messages']) >= 2:
         await update.message.reply_text("Секундочку, формулирую ответ... ✍️")
         

@@ -192,36 +192,66 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         context.user_data['messages'].append(doc_content)
         await update.message.reply_text(
-            "Отлично! Сейчас создам адаптированный пост... ✍️"
+            "Отлично! Сейчас создам адаптированный пост из 4 частей... ✍️"
         )
         
         try:
             source_content = context.user_data['messages'][0]
             
+            # Split text into 4 parts
+            from src.text_splitter import split_text_into_parts
+            content_parts = split_text_into_parts(source_content, 4)
+            
             tasks = SocialMediaTask()
             agents = SocialMediaAgent()
             
-            content_agent = agents.content_creator_agent()
+            # Create all four agents
+            content_agent1 = agents.content_creator_agent()
+            content_agent2 = agents.content_creator_agent_part2()
+            content_agent3 = agents.content_creator_agent_part3()
+            content_agent4 = agents.content_creator_agent_part4()
             
-            # Create and execute the single task
-            creation_task = tasks.content_creation_task(content_agent, source_content)
+            # Create tasks for each part
+            creation_task1 = tasks.content_creation_task(content_agent1, content_parts[0])
+            creation_task2 = tasks.content_creation_task_part2(content_agent2, content_parts[1])
+            creation_task3 = tasks.content_creation_task_part3(content_agent3, content_parts[2])
+            creation_task4 = tasks.content_creation_task_part4(content_agent4, content_parts[3])
             
+            # Set up the crew with all agents and tasks
             crew = Crew(
-                agents=[content_agent],
-                tasks=[creation_task]
+                agents=[content_agent1, content_agent2, content_agent3, content_agent4],
+                tasks=[creation_task1, creation_task2, creation_task3, creation_task4]
             )
             
+            await update.message.reply_text("Начинаю обработку контента (это может занять некоторое время)...")
+            
+            # Run all tasks
             result = crew.kickoff()
+            
+            # Combine all results
+            combined_output = f"""
+--- Part 1 ---
+{creation_task1.output}
+
+--- Part 2 ---
+{creation_task2.output}
+
+--- Part 3 ---
+{creation_task3.output}
+
+--- Part 4 ---
+{creation_task4.output}
+"""
             
             # Save the generated content
             post_link = save_to_google_drive(
-                creation_task.output, 
+                combined_output, 
                 source_content, 
                 "Соцсети"
             )
             
             # Send the result
-            await update.message.reply_text("✅ Пост готов!")
+            await update.message.reply_text("✅ Пост из 4 частей готов!")
             
             if post_link:
                 await update.message.reply_text(f"Ссылка на пост: {post_link}")

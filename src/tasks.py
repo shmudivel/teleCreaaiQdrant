@@ -62,3 +62,20 @@ class SocialMediaTask():
                 - соблюдать стиль и тон предыдущих частей"""),
             agent=agent
         )
+
+    def final_editing_task(self, agent, combined_content):
+        return Task(
+            description=dedent(f"""\
+                Финальная редакция готового поста из 4 частей для dzen.ru:
+                
+                {combined_content}"""),
+            expected_output=dedent("""\
+                Готовый пост для dzen.ru:
+                - проверить связность между всеми четырьмя частями
+                - исправить стилистические ошибки
+                - улучшить заголовки и подзаголовки
+                - убедиться в соответствии формату dzen.ru
+                - СОХРАНИТЬ СТРУКТУРУ с разделением на 4 части
+                - СОХРАНИТЬ ВСЕ МАРКЕРЫ ЧАСТЕЙ (--- Part X ---)"""),
+            agent=agent
+        )

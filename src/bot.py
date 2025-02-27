@@ -243,9 +243,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 {creation_task4.output}
 """
             
-            # Save the generated content
+            # Create final editor agent
+            final_editor = agents.final_editor_agent()
+
+            # Create final editing task with combined content
+            final_editing_task = tasks.final_editing_task(final_editor, combined_output)
+
+            # Set up a new crew for final editing
+            final_crew = Crew(
+                agents=[final_editor],
+                tasks=[final_editing_task]
+            )
+
+            await update.message.reply_text("Выполняю финальную редакцию поста...")
+
+            # Run final editing
+            final_result = final_crew.kickoff()
+
+            # Use the final edited result for saving
             post_link = save_to_google_drive(
-                combined_output, 
+                final_editing_task.output, 
                 source_content, 
                 "Соцсети"
             )

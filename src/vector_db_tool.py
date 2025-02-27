@@ -27,7 +27,7 @@ class VectorDBToolset:
         
         # Build a RetrievalQA chain with an OpenAI model
         self.qa_chain = RetrievalQA.from_chain_type(
-            llm=OpenAI(),
+            llm=OpenAI(model_name="gpt-4o-2024-11-20", temperature=0.3),
             chain_type="stuff",
             retriever=self.vector_store.as_retriever()
         )

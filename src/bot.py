@@ -119,10 +119,7 @@ def save_to_google_drive(text, comment, platform):
         ).execute()
 
         # Format the content
-        content = f"""Original Comment ({platform}):
-{comment}
-
-Generated Response:
+        content = f"""Generated Response:
 {text}
 
 Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""

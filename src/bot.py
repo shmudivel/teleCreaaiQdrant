@@ -3,8 +3,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import os
 from dotenv import load_dotenv
 from crewai import Crew
-from .tasks import contentSocialMediaTasks
-from .agents import contentSocialMediaAgents
+from .tasks import SocialMediaTask
+from .agents import SocialMediaAgent
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -181,7 +181,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         doc_id = extract_doc_id(current_message)
         if not doc_id:
             await update.message.reply_text(
-                "Пожалуйста, отправьте корректную ссылку на Google Doc с YouTube-контентом 📄"
+                "Пожалуйста, отправьте корректную ссылку на Google Doc с контентом 📄"
             )
             return
         
@@ -195,44 +195,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         context.user_data['messages'].append(doc_content)
         await update.message.reply_text(
-            "Отлично! Сейчас создам посты для Дзен и VC.ru... ✍️"
+            "Отлично! Сейчас создам адаптированный пост... ✍️"
         )
         
         try:
-            youtube_content = context.user_data['messages'][0]
+            source_content = context.user_data['messages'][0]
             
-            tasks = contentSocialMediaTasks()
-            agents = contentSocialMediaAgents()
+            tasks = SocialMediaTask()
+            agents = SocialMediaAgent()
             
-            content_agent = agents.content_adaptation_agent()
-            dzen_agent = agents.dzen_specialist_agent()
-            vc_agent = agents.vc_specialist_agent()
+            content_agent = agents.content_creator_agent()
             
-            # Analyze content first
-            analysis_task = tasks.content_analysis_task(content_agent, youtube_content)
-            
-            # Create posts for each platform
-            dzen_task = tasks.create_dzen_post_task(dzen_agent, analysis_task.output, youtube_content)
-            vc_task = tasks.create_vc_post_task(vc_agent, analysis_task.output, youtube_content)
+            # Create and execute the single task
+            creation_task = tasks.content_creation_task(content_agent, source_content)
             
             crew = Crew(
-                agents=[content_agent, dzen_agent, vc_agent],
-                tasks=[analysis_task, dzen_task, vc_task]
+                agents=[content_agent],
+                tasks=[creation_task]
             )
             
             result = crew.kickoff()
             
-            # Save both posts to Google Drive
-            dzen_link = save_to_google_drive(dzen_task.output, youtube_content, "Дзен")
-            vc_link = save_to_google_drive(vc_task.output, youtube_content, "VC.ru")
+            # Save the generated content
+            post_link = save_to_google_drive(
+                creation_task.output, 
+                source_content, 
+                "Соцсети"
+            )
             
-            # Send the results
-            await update.message.reply_text("✅ Посты готовы!")
+            # Send the result
+            await update.message.reply_text("✅ Пост готов!")
             
-            if dzen_link:
-                await update.message.reply_text(f"Пост для Дзен: {dzen_link}")
-            if vc_link:
-                await update.message.reply_text(f"Пост для VC.ru: {vc_link}")
+            if post_link:
+                await update.message.reply_text(f"Ссылка на пост: {post_link}")
             
             context.user_data['messages'] = []
             

@@ -1,10 +1,10 @@
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 import os
 from dotenv import load_dotenv
 from crewai import Crew
-from .tasks import SocialMediaTask
-from .agents import SocialMediaAgent
+from src.platforms.factory import PlatformFactory
+from src.text_splitter import split_text_into_parts
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -151,9 +151,9 @@ Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     await update.message.reply_text(
-        'Здравствуйте! Я помогу вам создавать информативные комментарии для соцсетей.\n\n'
+        'Здравствуйте! Я помогу вам создавать информативные посты для соцсетей.\n\n'
         'Чтобы начать, отправьте мне:\n'
-        '1. Ссылку на Google Doc с комментарием\n'
+        '1. Ссылку на Google Doc с контентом\n'
         'Команда /help - если нужна помощь\n\n'
     )
 
@@ -163,8 +163,41 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Как я работаю:\n'
         '/start - Начать работу\n'
         '/help - Показать это сообщение\n\n'
-        'Отправьте ссылку на Google Doc с комментарием и укажите соцсеть - я помогу составить информативный ответ'
+        'Отправьте ссылку на Google Doc с контентом - я помогу создать оптимизированный пост для выбранной соцсети'
     )
+
+async def show_platform_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show buttons for platform selection."""
+    platforms = PlatformFactory.get_available_platforms()
+    
+    keyboard = []
+    for platform_id, display_name in platforms.items():
+        keyboard.append([InlineKeyboardButton(display_name, callback_data=f"platform_{platform_id}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        'Выберите социальную сеть, для которой нужно создать пост:',
+        reply_markup=reply_markup
+    )
+
+async def handle_platform_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle platform selection via callback query."""
+    query = update.callback_query
+    await query.answer()
+    
+    # Extract platform from callback data
+    platform = query.data.replace("platform_", "")
+    context.user_data['selected_platform'] = platform
+    
+    # Get the display name of the platform
+    platforms = PlatformFactory.get_available_platforms()
+    platform_name = platforms.get(platform, platform)
+    
+    await query.edit_message_text(f"Выбрана платформа: {platform_name}\n\nОтлично! Теперь я создам адаптированный пост из 4 частей... ✍️")
+    
+    # Process the content
+    await process_content(update, context, query.message)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages and generate content using CrewAI."""
@@ -191,45 +224,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         context.user_data['messages'].append(doc_content)
-        await update.message.reply_text(
-            "Отлично! Сейчас создам адаптированный пост из 4 частей... ✍️"
+        
+        # Show platform selection
+        await show_platform_selection(update, context)
+
+async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
+    """Process the content for the selected platform."""
+    try:
+        source_content = context.user_data['messages'][0]
+        platform = context.user_data.get('selected_platform', 'dzen')  # Default to dzen if not specified
+        
+        # Get platform-specific agents and tasks
+        agents_class = PlatformFactory.get_platform_agents(platform)
+        tasks_class = PlatformFactory.get_platform_tasks(platform)
+        
+        # Split text into 4 parts
+        content_parts = split_text_into_parts(source_content, 4)
+        
+        # Create all four agents
+        content_agent1 = agents_class.content_creator_agent()
+        content_agent2 = agents_class.content_creator_agent_part2()
+        content_agent3 = agents_class.content_creator_agent_part3()
+        content_agent4 = agents_class.content_creator_agent_part4()
+        
+        # Create tasks for each part
+        creation_task1 = tasks_class.content_creation_task(content_agent1, content_parts[0])
+        creation_task2 = tasks_class.content_creation_task_part2(content_agent2, content_parts[1])
+        creation_task3 = tasks_class.content_creation_task_part3(content_agent3, content_parts[2])
+        creation_task4 = tasks_class.content_creation_task_part4(content_agent4, content_parts[3])
+        
+        # Set up the crew with all agents and tasks
+        crew = Crew(
+            agents=[content_agent1, content_agent2, content_agent3, content_agent4],
+            tasks=[creation_task1, creation_task2, creation_task3, creation_task4]
         )
         
-        try:
-            source_content = context.user_data['messages'][0]
-            
-            # Split text into 4 parts
-            from src.text_splitter import split_text_into_parts
-            content_parts = split_text_into_parts(source_content, 4)
-            
-            tasks = SocialMediaTask()
-            agents = SocialMediaAgent()
-            
-            # Create all four agents
-            content_agent1 = agents.content_creator_agent()
-            content_agent2 = agents.content_creator_agent_part2()
-            content_agent3 = agents.content_creator_agent_part3()
-            content_agent4 = agents.content_creator_agent_part4()
-            
-            # Create tasks for each part
-            creation_task1 = tasks.content_creation_task(content_agent1, content_parts[0])
-            creation_task2 = tasks.content_creation_task_part2(content_agent2, content_parts[1])
-            creation_task3 = tasks.content_creation_task_part3(content_agent3, content_parts[2])
-            creation_task4 = tasks.content_creation_task_part4(content_agent4, content_parts[3])
-            
-            # Set up the crew with all agents and tasks
-            crew = Crew(
-                agents=[content_agent1, content_agent2, content_agent3, content_agent4],
-                tasks=[creation_task1, creation_task2, creation_task3, creation_task4]
-            )
-            
-            await update.message.reply_text("Начинаю обработку контента (это может занять некоторое время)...")
-            
-            # Run all tasks
-            result = crew.kickoff()
-            
-            # Combine all results
-            combined_output = f"""
+        msg_to_edit = message if message else update.message
+        await msg_to_edit.reply_text("Начинаю обработку контента (это может занять некоторое время)...")
+        
+        # Run all tasks
+        result = crew.kickoff()
+        
+        # Combine all results
+        combined_output = f"""
 --- Part 1 ---
 {creation_task1.output}
 
@@ -242,64 +279,73 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 --- Part 4 ---
 {creation_task4.output}
 """
-            
-            # Create final editor agent
-            final_editor = agents.final_editor_agent()
+        
+        # Create final editor agent
+        final_editor = agents_class.final_editor_agent()
 
-            # Create final editing task with combined content
-            final_editing_task = tasks.final_editing_task(final_editor, combined_output)
+        # Create final editing task with combined content
+        final_editing_task = tasks_class.final_editing_task(final_editor, combined_output)
 
-            # После объединения контента и перед финальной редакцией
-            seo_optimizer = agents.seo_optimizer_agent()
-            seo_task = tasks.seo_optimization_task(seo_optimizer, combined_output)
-            
-            # Добавляем SEO-агента в crew
-            final_crew = Crew(
-                agents=[seo_optimizer, final_editor],
-                tasks=[seo_task, final_editing_task]
-            )
+        # After combining content and before final editing
+        seo_optimizer = agents_class.seo_optimizer_agent()
+        seo_task = tasks_class.seo_optimization_task(seo_optimizer, combined_output)
+        
+        # Add SEO agent to crew
+        final_crew = Crew(
+            agents=[seo_optimizer, final_editor],
+            tasks=[seo_task, final_editing_task]
+        )
 
-            await update.message.reply_text("Выполняю финальную редакцию поста...")
+        await msg_to_edit.reply_text("Выполняю финальную редакцию поста...")
 
-            # Run final editing
-            final_result = final_crew.kickoff()
+        # Run final editing
+        final_result = final_crew.kickoff()
 
-            # Use the final edited result for saving
-            post_link = save_to_google_drive(
-                final_editing_task.output, 
-                source_content, 
-                "Соцсети"
-            )
-            
-            # Send the result
-            await update.message.reply_text("✅ Пост из 4 частей готов!")
-            
-            if post_link:
-                await update.message.reply_text(f"Ссылка на пост: {post_link}")
-            
-            context.user_data['messages'] = []
-            
-        except Exception as e:
-            logger.error(f"Error generating content: {str(e)}")
-            await update.message.reply_text(
-                "Упс! Что-то пошло не так 😅 Давайте попробуем еще раз?"
-            )
-            context.user_data['messages'] = []
+        # Get platform display name for the document
+        platforms = PlatformFactory.get_available_platforms()
+        platform_name = platforms.get(platform, platform)
+
+        # Use the final edited result for saving
+        post_link = save_to_google_drive(
+            final_editing_task.output, 
+            source_content, 
+            platform_name
+        )
+        
+        # Send the result
+        await msg_to_edit.reply_text(f"✅ Пост для {platform_name} готов!")
+        
+        if post_link:
+            await msg_to_edit.reply_text(f"Ссылка на пост: {post_link}")
+        
+        context.user_data['messages'] = []
+        
+    except Exception as e:
+        logger.error(f"Error processing content: {str(e)}")
+        msg_to_edit = message if message else update.message
+        await msg_to_edit.reply_text(f"Произошла ошибка при обработке контента: {str(e)}")
+        context.user_data['messages'] = []
 
 def main():
     """Start the bot."""
+    # Load environment variables
     load_dotenv()
     
     # Create the Application
     application = Application.builder().token(os.getenv('BOT_TOKEN')).build()
 
-    # Add handlers
+    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    
+    # Add message handler
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Add callback query handler for platform selection
+    application.add_handler(CallbackQueryHandler(handle_platform_selection, pattern=r'^platform_'))
 
-    # Start the Bot
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Run the bot until the user presses Ctrl-C
+    application.run_polling()
 
 if __name__ == '__main__':
     main() 

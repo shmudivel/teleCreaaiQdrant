@@ -77,7 +77,24 @@ class SocialMediaTask():
                 - соблюдать стиль и тон предыдущих частей"""),
             agent=agent
         )
-
+    
+    def seo_optimization_task(self, agent, combined_content):
+        return Task(
+            description=dedent(f"""\
+                SEO оптимизация готового поста:
+                
+                {combined_content}"""),
+            expected_output=dedent("""\
+                Оптимизированный пост для dzen.ru:
+                - SEO: добавить 3-5 основных ключевых слов
+                - SEO: использовать LSI-слова (минимум 5)
+                - SEO: оптимизировать заголовки H2-H3
+                - SEO: создать мета-описание с главным ключом
+                - SEO: проверить плотность ключей (2-3%)
+                - SEO: отчет оптимезаций в конце статьи большими буквами"""),
+            agent=agent
+        )
+    
     def final_editing_task(self, agent, combined_content):
         return Task(
             description=dedent(f"""\
@@ -90,3 +107,4 @@ class SocialMediaTask():
                 - исправить стилистические ошибки"""),
             agent=agent
         )
+

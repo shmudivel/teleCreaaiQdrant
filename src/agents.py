@@ -69,7 +69,25 @@ class SocialMediaAgent():
                  """),
             verbose=True
         )
-    
+
+    def seo_optimizer_agent(self):
+        return Agent(
+            role="SEO специалист для Dzen.ru",
+            goal='оптимизировать текст для поисковых систем',
+            backstory=dedent("""\
+                Я профессиональный SEO-оптимизатор контента для dzen.ru.
+
+                Ваши задачи:
+                • анализировать семантическое ядро
+                • добавлять ключевые слова естественным образом
+                • оптимизировать плотность ключей (2-3%)
+                • создавать мета-описания
+                • добавлять LSI-слова
+                • проверять внутреннюю перелинковку
+                """),
+            verbose=True
+        )
+
     def final_editor_agent(self):
         return Agent(
             role="главный редактор для dzen.ru",
@@ -85,3 +103,4 @@ class SocialMediaAgent():
                  """),
             verbose=True
         )
+    

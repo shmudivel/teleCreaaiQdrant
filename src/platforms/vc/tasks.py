@@ -2,7 +2,7 @@ from textwrap import dedent
 from crewai import Task
 
 class VCTasks:
-    """Tasks for creating VKontakte content."""
+    """Tasks for creating vc.ru content."""
     
     def content_creation_task(self, agent, source_content):
         return Task(
@@ -10,7 +10,7 @@ class VCTasks:
                 1 part of 4 parts of content
                 {source_content}"""),
             expected_output=dedent("""\
-                Готовый пост для ВКонтакте:
+                Готовый пост для vc.ru:
                 - сделать тон более разговорным и дружелюбным
                 - редактировать только --- part 1 --- остальное не трогать
                 - создать яркий заголовок, который вызовет желание читать дальше
@@ -27,7 +27,7 @@ class VCTasks:
                 2 part of 4 parts of content
                 {source_content}"""),
             expected_output=dedent("""\
-                Готовый пост для ВКонтакте:
+                Готовый пост для vc.ru:
                 - сделать тон более разговорным и дружелюбным
                 - редактировать только --- part 2 --- остальное не трогать
                 - использовать короткие абзацы и простые предложения
@@ -44,7 +44,7 @@ class VCTasks:
                 3 part of 4 parts of content
                 {source_content}"""),
             expected_output=dedent("""\
-                Готовый пост для ВКонтакте:
+                Готовый пост для vc.ru:
                 - сделать тон более разговорным и дружелюбным
                 - редактировать только --- part 3 --- остальное не трогать
                 - продолжать поддерживать интерес читателя
@@ -61,7 +61,7 @@ class VCTasks:
                 4 part of 4 parts of content
                 {source_content}"""),
             expected_output=dedent("""\
-                Готовый пост для ВКонтакте:
+                Готовый пост для vc.ru:
                 - сделать тон более разговорным и дружелюбным
                 - редактировать только --- part 4 --- остальное не трогать
                 - создать мощное завершение, которое вдохновит читателя
@@ -79,9 +79,9 @@ class VCTasks:
                 
                 {combined_content}"""),
             expected_output=dedent("""\
-                Оптимизированный пост для ВКонтакте:
+                Оптимизированный пост для vc.ru:
                 - добавить 3-5 релевантных хештегов
-                - оптимизировать под алгоритмы ВКонтакте
+                - оптимизировать под алгоритмы vc.ru
                 - добавить элементы для повышения вовлеченности
                 - включить trending topics, если уместно
                 - проверить эмоциональную окраску текста
@@ -92,11 +92,11 @@ class VCTasks:
     def final_editing_task(self, agent, combined_content):
         return Task(
             description=dedent(f"""\
-                Финальная редакция готового поста из 4 частей для ВКонтакте:
+                Финальная редакция готового поста из 4 частей для vc.ru:
                 
                 {combined_content}"""),
             expected_output=dedent("""\
-                Готовый пост для ВКонтакте:
+                Готовый пост для vc.ru:
                 - проверить связность между всеми четырьмя частями
                 - обеспечить единый стиль и тон через весь пост
                 - финализировать хештеги и интерактивные элементы

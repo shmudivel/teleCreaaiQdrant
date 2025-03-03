@@ -8,7 +8,7 @@ A Telegram bot that helps create optimized content for different social media pl
 - Splits content into manageable parts
 - Supports multiple social media platforms:
   - Dzen.ru
-  - VKontakte
+  - VC.ru
 - Uses AI agents to optimize content for each platform
 - Performs SEO optimization
 - Saves results to Google Drive

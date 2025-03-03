@@ -11,12 +11,12 @@ class PlatformFactory:
         "dzen": {
             "agents": dzen_agents.DzenAgents,
             "tasks": dzen_tasks.DzenTasks,
-            "display_name": "Дзен"
+            "display_name": "dzen.ru"
         },
         "vc": {
             "agents": vc_agents.VCAgents,
             "tasks": vc_tasks.VCTasks,
-            "display_name": "ВКонтакте"
+            "display_name": "vc.ru"
         }
     }
     

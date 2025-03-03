@@ -249,10 +249,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Create final editing task with combined content
             final_editing_task = tasks.final_editing_task(final_editor, combined_output)
 
-            # Set up a new crew for final editing
+            # После объединения контента и перед финальной редакцией
+            seo_optimizer = agents.seo_optimizer_agent()
+            seo_task = tasks.seo_optimization_task(seo_optimizer, combined_output)
+            
+            # Добавляем SEO-агента в crew
             final_crew = Crew(
-                agents=[final_editor],
-                tasks=[final_editing_task]
+                agents=[seo_optimizer, final_editor],
+                tasks=[seo_task, final_editing_task]
             )
 
             await update.message.reply_text("Выполняю финальную редакцию поста...")

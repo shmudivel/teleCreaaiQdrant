@@ -108,6 +108,8 @@ class DzenAgents:
                 """),
             verbose=True
         )
+    
+
 
     def final_editor_agent(self):
         return Agent(
@@ -123,4 +125,20 @@ class DzenAgents:
                 • сохранить структуру с разделением на 4 части
                  """),
             verbose=True
+        )
+
+    def literary_editor_agent(self):
+        """
+        Creates a literary editor agent that improves the writing style and readability.
+        """
+        return Agent(
+            role="Literary Editor",
+            goal="Enhance the literary quality and readability of the content",
+            backstory="""You are an expert literary editor with a keen eye for style, flow, and narrative structure.
+            Your job is to take content and transform it into engaging, well-written prose that captivates readers.
+            You excel at improving readability, fixing awkward phrasing, enhancing vocabulary, and ensuring 
+            the content has a consistent and appealing voice.""",
+            verbose=True,
+            allow_delegation=False,
+            tools=[],
         ) 

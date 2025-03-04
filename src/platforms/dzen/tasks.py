@@ -19,9 +19,7 @@ class DzenTasks:
                 - это не видео а статья, не используету "А еще в конце видео я поделюсь" подобные фразу 
                 - не менять драмотичность и эмоциональность с оригенального текста
                 - приветствия быть не должно, так как это статья
-                - причинно-следственная связь между обзацами как в оригенальном тексте
-                - +10 процентов бизнес делового стиля
-                - +10 иронии"""),
+                - причинно-следственная связь между обзацами как в оригенальном тексте"""),
             agent=agent
         )
     
@@ -39,9 +37,7 @@ class DzenTasks:
                 - избегать длинных предложений и сложных терминов
                 - добавлять драммотичность и эмоциональность где уместно
                 - соблюдать стиль и тон первой части
-                - причинно-следственная связь между обзацами как в оригенальном тексте
-                - +10 процентов бизнес делового стиля
-                - +10 иронии"""),
+                - причинно-следственная связь между обзацами как в оригенальном тексте"""),
             agent=agent
         )
     
@@ -59,9 +55,7 @@ class DzenTasks:
                 - избегать длинных предложений и сложных терминов
                 - добавлять драммотичность и эмоциональность где уместно
                 - соблюдать стиль и тон предыдущих частей
-                - причинно-следственная связь между обзацами как в оригенальном тексте
-                - +10 процентов бизнес делового стиля
-                - +10 иронии"""),
+                - причинно-следственная связь между обзацами как в оригенальном тексте"""),
             agent=agent
         )
     
@@ -80,9 +74,7 @@ class DzenTasks:
                 - добавлять призывы к действию и вопросы для вовлечения читателей (например "Поделитесь в комментариях")
                 - сделать сильное завершение статьи
                 - соблюдать стиль и тон предыдущих частей
-                - причинно-следственная связь между обзацами как в оригенальном тексте
-                - +10 процентов бизнес делового стиля
-                - +10 иронии"""),
+                - причинно-следственная связь между обзацами как в оригенальном тексте"""),
             agent=agent
         )
     
@@ -103,6 +95,7 @@ class DzenTasks:
             agent=agent
         )
     
+    
     def final_editing_task(self, agent, combined_content):
         return Task(
             description=dedent(f"""\
@@ -115,4 +108,35 @@ class DzenTasks:
                 - исправить стилистические ошибки
                 - причинно-следственная связь между частями"""),
             agent=agent
-        ) 
+        )
+
+    def literary_editing_task(self, agent, content):
+        """
+        Creates a task for literary editing of the content.
+        
+        Args:
+            agent: The literary editor agent
+            content: The content to be edited
+        
+        Returns:
+            Task: A task for literary editing
+        """
+        return Task(
+            description=f"""
+            Review and enhance the literary quality of the following content:
+            
+            {content}
+            
+            Your task is to:
+            1. Improve the flow and readability of the text
+            2. Enhance vocabulary and word choice where appropriate
+            3. Fix awkward phrasing and sentence structures
+            4. Ensure a consistent and engaging voice throughout
+            5. Make the content more captivating while preserving all information
+            6. Maintain the original structure with the part divisions
+            
+            Return the improved version of the content with enhanced literary quality.
+            """,
+            agent=agent,
+            expected_output="The content with improved literary style and readability, maintaining the original structure with part divisions."
+        )

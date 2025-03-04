@@ -280,17 +280,35 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, me
 {creation_task4.output}
 """
         
+        # Create literary editor agent
+        literary_editor = agents_class.literary_editor_agent()
+        
+        # Create literary editing task
+        literary_editing_task = tasks_class.literary_editing_task(literary_editor, combined_output)
+        
         # Create final editor agent
         final_editor = agents_class.final_editor_agent()
 
-        # Create final editing task with combined content
-        final_editing_task = tasks_class.final_editing_task(final_editor, combined_output)
-
-        # After combining content and before final editing
+        # Create SEO optimizer agent
         seo_optimizer = agents_class.seo_optimizer_agent()
+        
+        # Create tasks for SEO and final editing
         seo_task = tasks_class.seo_optimization_task(seo_optimizer, combined_output)
         
-        # Add SEO agent to crew
+        # Add literary editing step to the workflow
+        await msg_to_edit.reply_text("Улучшаю литературный стиль текста...")
+        
+        # Run literary editing
+        literary_crew = Crew(
+            agents=[literary_editor],
+            tasks=[literary_editing_task]
+        )
+        literary_result = literary_crew.kickoff()
+        
+        # Use the literary edited content for final editing
+        final_editing_task = tasks_class.final_editing_task(final_editor, literary_editing_task.output)
+        
+        # Final crew with SEO and final editor
         final_crew = Crew(
             agents=[seo_optimizer, final_editor],
             tasks=[seo_task, final_editing_task]

@@ -54,12 +54,8 @@ class VectorDBToolset:
                 embeddings=embeddings
             )
             
-            # Build a RetrievalQA chain with an OpenAI model
-            self.qa_chain = RetrievalQA.from_chain_type(
-                llm=OpenAI(model_name="gpt-4o-2024-11-20", temperature=0.3),
-                chain_type="stuff",
-                retriever=self.vector_store.as_retriever()
-            )
+            # Build RetrievalQA with configurable LLM
+            self.qa_chain = self._create_qa_chain()
         
         except Exception as e:
             logger.error(f"Error initializing vector database: {str(e)}")
@@ -67,6 +63,31 @@ class VectorDBToolset:
             self.client = None
             self.vector_store = None
             self.qa_chain = None
+
+    def _create_qa_chain(self):
+        llm = self._get_llm()
+        return RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=self.vector_store.as_retriever()
+        )
+
+    def _get_llm(self):
+        provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        model_name = os.getenv("LLM_MODEL", "gpt-4o-2024-11-20")
+
+        if provider == "anthropic":
+            from langchain_anthropic import ChatAnthropic
+            return ChatAnthropic(
+                model_name=model_name,
+                temperature=0.3
+            )
+        else:  # Default to OpenAI
+            from langchain_community.chat_models import ChatOpenAI
+            return ChatOpenAI(
+                model_name=model_name,
+                temperature=0.3
+            )
 
     @tool
     def vector_db_query(self, query: str) -> str:

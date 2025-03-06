@@ -28,7 +28,7 @@ class DzenTasks:
             expected_output=dedent("""\
                 Готовый пост для dzen.ru:
                 - редактировать только --- part 2 --- остальное не трогать
-                - добавить еще релевантные данные из базы знаний через tools
+                - релевантные данные из базы знаний через tools
                 - добавлять драммотичность и эмоциональность где уместно"""),
             agent=agent
         )
@@ -41,7 +41,7 @@ class DzenTasks:
             expected_output=dedent("""\
                 Готовый пост для dzen.ru:
                 - редактировать только --- part 3 --- остальное не трогать
-                - можно добавть еще релевантные данные из базы знаний через tools"""),
+                -  добавть еще релевантные данные из базы знаний через tools"""),
             agent=agent
         )
     
@@ -53,7 +53,7 @@ class DzenTasks:
             expected_output=dedent("""\
                 Готовый пост для dzen.ru:
                 - редактировать только --- part 4 --- остальное не трогать
-                - можно добавть еще релевантные данные из базы знаний через tools
+                - добавть еще релевантные данные из базы знаний через tools
                 - сделать сильное завершение статьи"""),
             agent=agent
         )
@@ -85,22 +85,12 @@ class DzenTasks:
             expected_output=dedent("""\
                 Готовый пост для dzen.ru:
                 - проверить связность между всеми четырьмя частями
-                - исправить стилистические ошибки
                 - причинно-следственная связь между частями"""),
             agent=agent
         )
 
     def literary_editing_task(self, agent, content):
-        """
-        Creates a task for literary editing of the content.
-        
-        Args:
-            agent: The literary editor agent
-            content: The content to be edited
-        
-        Returns:
-            Task: A task for literary editing
-        """
+
         return Task(
             description=f"""
             Review and enhance the literary quality of the following content:
@@ -109,14 +99,8 @@ class DzenTasks:
             
             Your task is to:
             1. Improve the flow and readability of the text
-            2. Enhance vocabulary and word choice where appropriate
-            3. Fix awkward phrasing and sentence structures
-            4. Ensure a consistent and engaging voice throughout
-            5. Make the content more captivating while preserving all information
-            6. Maintain the original structure with the part divisions
-            
-            Return the improved version of the content with enhanced literary quality.
+
             """,
             agent=agent,
-            expected_output="The content with improved literary style and readability, maintaining the original structure with part divisions."
+            expected_output="The content with improved literary style and readability"
         )

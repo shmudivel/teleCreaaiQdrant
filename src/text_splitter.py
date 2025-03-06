@@ -1,4 +1,5 @@
 import re
+from src.text_analyzer import analyze_text_structure
 
 def split_text_into_parts(text, num_parts=4):
     """
@@ -50,26 +51,6 @@ def split_text_into_parts(text, num_parts=4):
     parts.append(text[start_index:])
     
     return parts
-
-def analyze_text_structure(text):
-    """Analyze text structure using OpenAI API"""
-    from openai import OpenAI
-    import os
-    
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    
-    prompt = """Составь максимально подробную структуру текста . Разбей на разделы и подпункты, используя заголовки, и перечисли ключевые слова и фразы, которые помогут быстро вспомнить содержание. Структура должна быть логичной и удобной для использования. Укажи основные тезисы, аргументы и примеры, и как можно больше существительных. для каждой новой линии формат глав и подглав 1. , 1.1, 1.1.1:
-    """
-    
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",
-        messages=[{
-            "role": "user",
-            "content": f"{prompt}\n\n{text[:15000]}"  # Truncate to fit context
-        }]
-    )
-    
-    return response.choices[0].message.content
 
 if __name__ == "__main__":
     # Example usage

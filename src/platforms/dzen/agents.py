@@ -133,10 +133,7 @@ class DzenAgents:
         return Agent(
             role="Literary Editor",
             goal="Enhance the literary quality and readability of the content",
-            backstory="""You are an expert literary editor with a keen eye for style, flow, and narrative structure.
-            Your job is to take content and transform it into engaging, well-written prose that captivates readers.
-            You excel at improving readability, fixing awkward phrasing, enhancing vocabulary, and ensuring 
-            the content has a consistent and appealing voice.""",
+            backstory="""fix typos and grammar errors, improve the flow and readability of the text""",
             verbose=True,
             allow_delegation=False,
             tools=[],

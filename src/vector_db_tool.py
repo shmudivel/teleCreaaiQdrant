@@ -4,8 +4,8 @@ import qdrant_client
 from langchain.agents import tool
 from langchain.chains import RetrievalQA
 from langchain_community.llms import OpenAI
-from langchain_community.vectorstores import Qdrant
-from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_qdrant import Qdrant
 from langchain.tools import BaseTool
 from qdrant_client.http import models
 from dotenv import load_dotenv
@@ -25,10 +25,12 @@ class VectorDBToolset:
     def __init__(self):
         """Initialize the vector database client."""
         try:
-            # Connect to Qdrant
+            # Connect to Qdrant with secure connection
             self.client = qdrant_client.QdrantClient(
                 url=os.getenv("QDRANT_URL", "http://qdrant:6333"),
-                api_key=os.getenv("QDRANT_API_KEY", "")
+                api_key=os.getenv("QDRANT_API_KEY", ""),
+                prefer_grpc=False,
+                https=False
             )
             
             # Check if the collection exists
@@ -83,7 +85,6 @@ class VectorDBToolset:
                 temperature=0.3
             )
         else:  # Default to OpenAI
-            from langchain_community.chat_models import ChatOpenAI
             return ChatOpenAI(
                 model_name=model_name,
                 temperature=0.3

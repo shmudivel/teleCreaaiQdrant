@@ -4,6 +4,10 @@ def split_text_into_parts(text, num_parts=4):
     """
     Split a large text into a specified number of roughly equal parts.
     """
+    # First analyze text structure
+    structure = analyze_text_structure(text)
+    print(f"Analyzed text structure:\n{structure}\n")
+    
     # Calculate the approximate length of each part
     total_length = len(text)
     part_length = total_length // num_parts
@@ -47,6 +51,25 @@ def split_text_into_parts(text, num_parts=4):
     
     return parts
 
+def analyze_text_structure(text):
+    """Analyze text structure using OpenAI API"""
+    from openai import OpenAI
+    import os
+    
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    
+    prompt = """Составь максимально подробную структуру текста . Разбей на разделы и подпункты, используя заголовки, и перечисли ключевые слова и фразы, которые помогут быстро вспомнить содержание. Структура должна быть логичной и удобной для использования. Укажи основные тезисы, аргументы и примеры, и как можно больше существительных. для каждой новой линии формат глав и подглав 1. , 1.1, 1.1.1:
+    """
+    
+    response = client.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=[{
+            "role": "user",
+            "content": f"{prompt}\n\n{text[:15000]}"  # Truncate to fit context
+        }]
+    )
+    
+    return response.choices[0].message.content
 
 if __name__ == "__main__":
     # Example usage

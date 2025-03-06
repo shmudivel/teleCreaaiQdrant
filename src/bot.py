@@ -231,6 +231,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
     """Process the content for the selected platform."""
     try:
+        # Добавлена проверка наличиния сообщений
+        if not context.user_data.get('messages') or len(context.user_data['messages']) < 1:
+            await update.message.reply_text("❌ Ошибка: Нет сообщения для обработки")
+            return
+
         source_content = context.user_data['messages'][0]
         platform = context.user_data.get('selected_platform', 'dzen')  # Default to dzen if not specified
         

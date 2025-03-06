@@ -3,53 +3,35 @@ from src.text_analyzer import analyze_text_structure
 
 def split_text_into_parts(text, num_parts=4):
     """
-    Split a large text into a specified number of roughly equal parts.
+    Split analyzed text STRUCTURE into specified number of parts
     """
-    # First analyze text structure
+    # Get analyzed structure first
     structure = analyze_text_structure(text)
     print(f"Analyzed text structure:\n{structure}\n")
     
-    # Calculate the approximate length of each part
-    total_length = len(text)
+    # Split the structure text instead of original
+    total_length = len(structure)
     part_length = total_length // num_parts
     
     parts = []
     start_index = 0
     
     for i in range(num_parts - 1):
-        # Find the nearest space or newline after the calculated part length
         end_index = start_index + part_length
         
-        # Make sure we don't exceed the text length
         if end_index >= total_length:
             break
         
-        # Try to find a good breaking point (end of sentence, paragraph, etc.)
-        # First, look for a paragraph break
-        newline_pos = text.find('\n\n', end_index - 100, end_index + 100)
+        # Find natural breaks in structure (section numbers)
+        # Look for the next section header
+        next_section = re.search(r'\n\d+\. ', structure[end_index:])
+        if next_section:
+            end_index += next_section.start()
         
-        if newline_pos != -1:
-            end_index = newline_pos + 2
-        else:
-            # Look for end of sentence
-            period_pos = text.find('. ', end_index - 100, end_index + 100)
-            
-            if period_pos != -1:
-                end_index = period_pos + 2
-            else:
-                # Just find the nearest space
-                space_pos = text.find(' ', end_index)
-                
-                if space_pos != -1:
-                    end_index = space_pos + 1
-        
-        # Add the part to our list
-        parts.append(text[start_index:end_index])
+        parts.append(structure[start_index:end_index])
         start_index = end_index
     
-    # Add the last part (remaining text)
-    parts.append(text[start_index:])
-    
+    parts.append(structure[start_index:])
     return parts
 
 if __name__ == "__main__":

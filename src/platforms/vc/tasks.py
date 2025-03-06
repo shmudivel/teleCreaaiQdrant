@@ -4,11 +4,11 @@ from crewai import Task
 class VCTasks:
     """Tasks for creating vc.ru content."""
     
-    def content_creation_task(self, agent, source_content):
+    def content_creation_task(self, agent, structure_part):
         return Task(
             description=dedent(f"""\
                 1 part of 4 parts of content
-                {source_content}"""),
+                {structure_part}"""),
             expected_output=dedent("""\
                 Готовый пост для vc.ru:
                 - сделать тон более разговорным и дружелюбным
@@ -21,11 +21,11 @@ class VCTasks:
             agent=agent
         )
     
-    def content_creation_task_part2(self, agent, source_content):
+    def content_creation_task_part2(self, agent, structure_part):
         return Task(
             description=dedent(f"""\
                 2 part of 4 parts of content
-                {source_content}"""),
+                {structure_part}"""),
             expected_output=dedent("""\
                 Готовый пост для vc.ru:
                 - сделать тон более разговорным и дружелюбным
@@ -38,11 +38,11 @@ class VCTasks:
             agent=agent
         )
     
-    def content_creation_task_part3(self, agent, source_content):
+    def content_creation_task_part3(self, agent, structure_part):
         return Task(
             description=dedent(f"""\
                 3 part of 4 parts of content
-                {source_content}"""),
+                {structure_part}"""),
             expected_output=dedent("""\
                 Готовый пост для vc.ru:
                 - сделать тон более разговорным и дружелюбным
@@ -55,11 +55,11 @@ class VCTasks:
             agent=agent
         )
     
-    def content_creation_task_part4(self, agent, source_content):
+    def content_creation_task_part4(self, agent, structure_part):
         return Task(
             description=dedent(f"""\
                 4 part of 4 parts of content
-                {source_content}"""),
+                {structure_part}"""),
             expected_output=dedent("""\
                 Готовый пост для vc.ru:
                 - сделать тон более разговорным и дружелюбным

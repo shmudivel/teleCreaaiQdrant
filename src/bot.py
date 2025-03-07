@@ -10,6 +10,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime
 import re
+import asyncio
 
 # Enable logging
 logging.basicConfig(
@@ -245,6 +246,13 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, me
         
         # Split text into 4 parts
         content_parts = split_text_into_parts(source_content, 4)
+        
+        # Validate that we have enough parts
+        if len(content_parts) < 4:
+            logger.warning(f"Not enough parts generated. Expected at least 4, got {len(content_parts)}")
+            # Pad the parts list with empty strings if needed
+            while len(content_parts) < 4:
+                content_parts.append("")
         
         # Create all four agents
         content_agent1 = agents_class.content_creator_agent()

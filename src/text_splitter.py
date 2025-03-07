@@ -3,14 +3,10 @@ from src.text_analyzer import analyze_text_structure
 
 def split_text_into_parts(text, num_parts=4):
     """
-    Split analyzed text STRUCTURE into specified number of parts
+    Split raw text into specified number of parts, then analyze structure of each part
     """
-    # Get analyzed structure first
-    structure = analyze_text_structure(text)
-    print(f"Analyzed text structure:\n{structure}\n")
-    
-    # Split the structure text instead of original
-    total_length = len(structure)
+    # Split the raw text first
+    total_length = len(text)
     part_length = total_length // num_parts
     
     parts = []
@@ -22,17 +18,21 @@ def split_text_into_parts(text, num_parts=4):
         if end_index >= total_length:
             break
         
-        # Find natural breaks in structure (section numbers)
-        # Look for the next section header
-        next_section = re.search(r'\n\d+\. ', structure[end_index:])
-        if next_section:
-            end_index += next_section.start()
+        # Find natural breaks in text (look for paragraph breaks)
+        next_break = re.search(r'\n\s*\n', text[end_index:end_index + 500])
+        if next_break:
+            end_index += next_break.start()
         
-        parts.append(structure[start_index:end_index])
+        parts.append(text[start_index:end_index])
         start_index = end_index
     
-    parts.append(structure[start_index:])
-    return parts
+    # Add the last part
+    parts.append(text[start_index:])
+    
+    # Now analyze the structure of each part
+    analyzed_parts = [analyze_text_structure(part) for part in parts]
+    
+    return analyzed_parts
 
 if __name__ == "__main__":
     # Example usage

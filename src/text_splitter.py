@@ -4,8 +4,15 @@ from src.text_analyzer import analyze_text_structure
 def split_text_into_parts(text, num_parts=4):
     """
     Split raw text into specified number of parts, then analyze structure of each part
+    
+    Args:
+        text (str): The input text to split
+        num_parts (int): Number of parts to split the text into (default: 4)
+        
+    Returns:
+        list: A list containing the analyzed text parts
     """
-    # Split the raw text first
+    # Calculate the approximate length of each part
     total_length = len(text)
     part_length = total_length // num_parts
     
@@ -13,20 +20,37 @@ def split_text_into_parts(text, num_parts=4):
     start_index = 0
     
     for i in range(num_parts - 1):
+        # Find the nearest natural boundary after the calculated part length
         end_index = start_index + part_length
         
-        if end_index >= total_length:
-            break
+        # Adjust end_index to avoid splitting words/sentences
+        if end_index < total_length:
+            # First try to find paragraph breaks (highest priority)
+            paragraph_break = re.search(r'\n\s*\n', text[end_index:end_index + 500])
+            if paragraph_break:
+                end_index += paragraph_break.start() + 1
+            else:
+                # Next try to find sentence boundaries
+                substring = text[end_index:]
+                # Look for punctuation followed by whitespace or end of string
+                match = re.search(r'(?<=[.!?])\s+', substring)
+                if match:
+                    end_index += match.end()  # Split after punctuation and whitespace
+                else:
+                    # Try to find a newline
+                    newline_pos = text.find('\n', end_index)
+                    space_pos = text.find(' ', end_index)
+                    
+                    if newline_pos != -1 and (space_pos == -1 or newline_pos < space_pos):
+                        end_index = newline_pos + 1
+                    elif space_pos != -1:
+                        end_index = space_pos + 1
         
-        # Find natural breaks in text (look for paragraph breaks)
-        next_break = re.search(r'\n\s*\n', text[end_index:end_index + 500])
-        if next_break:
-            end_index += next_break.start()
-        
+        # Add the part to our list
         parts.append(text[start_index:end_index])
         start_index = end_index
     
-    # Add the last part
+    # Add the last part (remaining text)
     parts.append(text[start_index:])
     
     # Now analyze the structure of each part

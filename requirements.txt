@@ -27,3 +27,7 @@ asyncio>=3.4.3
 google-api-python-client==2.161.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.0 
+
+# Ensure Anthropic is properly installed
+anthropic>=0.20.0
+langchain-anthropic>=0.0.2

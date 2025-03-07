@@ -75,17 +75,17 @@ class VectorDBToolset:
         )
 
     def _get_llm(self):
-        provider = os.getenv("LLM_PROVIDER", "openai").lower()
-        model_name = os.getenv("LLM_MODEL", "gpt-4o-2024-11-20")
+        provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
+        model_name = os.getenv("LLM_MODEL", "claude-3-sonnet-20240229")
 
-        if provider == "anthropic":
-            from langchain_anthropic import ChatAnthropic
-            return ChatAnthropic(
+        if provider == "openai":
+            return ChatOpenAI(
                 model_name=model_name,
                 temperature=0.3
             )
-        else:  # Default to OpenAI
-            return ChatOpenAI(
+        else:  # Default to Anthropic
+            from langchain_anthropic import ChatAnthropic
+            return ChatAnthropic(
                 model_name=model_name,
                 temperature=0.3
             )

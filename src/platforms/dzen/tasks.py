@@ -104,22 +104,22 @@ class DzenTasks:
             agent=agent
         )
     
-    def seo_optimization_task(self, agent, combined_content):
-        return Task(
-            description=dedent(f"""\
-                SEO оптимизация готового поста:
-                
-                {combined_content}"""),
-            expected_output=dedent("""\
-                Оптимизированный пост для dzen.ru:
-                - SEO: добавить 3-5 основных ключевых слов
-                - SEO: использовать LSI-слова (минимум 5)
-                - SEO: оптимизировать заголовки H2-H3
-                - SEO: создать мета-описание с главным ключом
-                - SEO: проверить плотность ключей (2-3%)
-                - SEO: отчет оптимезаций в конце статьи большими буквами"""),
-            agent=agent
-        )
+    # def seo_optimization_task(self, agent, combined_content):
+    #     return Task(
+    #         description=dedent(f"""\
+    #             SEO оптимизация готового поста:
+    #             
+    #             {combined_content}"""),
+    #         expected_output=dedent("""\
+    #             Оптимизированный пост для dzen.ru:
+    #             - SEO: добавить 3-5 основных ключевых слов
+    #             - SEO: использовать LSI-слова (минимум 5)
+    #             - SEO: оптимизировать заголовки H2-H3
+    #             - SEO: создать мета-описание с главным ключом
+    #             - SEO: проверить плотность ключей (2-3%)
+    #             - SEO: отчет оптимезаций в конце статьи большими буквами"""),
+    #         agent=agent
+    #     )
     
     
     def final_editing_task(self, agent, combined_content):
@@ -135,18 +135,17 @@ class DzenTasks:
             agent=agent
         )
 
-    def literary_editing_task(self, agent, content):
+    # def literary_editing_task(self, agent, content):
+    #     return Task(
+    #         description=f"""
+    #         Review and enhance the literary quality of the following content:
+    #         
+    #         {content}
+    #         
+    #         Your task is to:
+    #         1. Improve the flow and readability of the text
 
-        return Task(
-            description=f"""
-            Review and enhance the literary quality of the following content:
-            
-            {content}
-            
-            Your task is to:
-            1. Improve the flow and readability of the text
-
-            """,
-            agent=agent,
-            expected_output="The content with improved literary style and readability"
-        )
+    #         """,
+    #         agent=agent,
+    #         expected_output="The content with improved literary style and readability"
+    #     )

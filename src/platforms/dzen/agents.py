@@ -85,23 +85,23 @@ class DzenAgents:
             verbose=True
         )
 
-    def seo_optimizer_agent(self):
-        return Agent(
-            role="SEO специалист для Dzen.ru",
-            goal='оптимизировать текст для поисковых систем',
-            backstory=dedent("""\
-                Я профессиональный SEO-оптимизатор контента для dzen.ru.
+    # def seo_optimizer_agent(self):
+    #     return Agent(
+    #         role="SEO специалист для Dzen.ru",
+    #         goal='оптимизировать текст для поисковых систем',
+    #         backstory=dedent("""\
+    #             Я профессиональный SEO-оптимизатор контента для dzen.ru.
 
-                Ваши задачи:
-                • анализировать семантическое ядро
-                • добавлять ключевые слова естественным образом
-                • оптимизировать плотность ключей (2-3%)
-                • создавать мета-описания
-                • добавлять LSI-слова
-                • проверять внутреннюю перелинковку
-                """),
-            verbose=True
-        )
+    #             Ваши задачи:
+    #             • анализировать семантическое ядро
+    #             • добавлять ключевые слова естественным образом
+    #             • оптимизировать плотность ключей (2-3%)
+    #             • создавать мета-описания
+    #             • добавлять LSI-слова
+    #             • проверять внутреннюю перелинковку
+    #             """),
+    #         verbose=True
+    #     )
     
 
 
@@ -121,15 +121,15 @@ class DzenAgents:
             verbose=True
         )
 
-    def literary_editor_agent(self):
-        """
-        Creates a literary editor agent that improves the writing style and readability.
-        """
-        return Agent(
-            role="Literary Editor",
-            goal="Enhance the literary quality and readability of the content",
-            backstory="""fix typos and grammar errors, improve the flow and readability of the text""",
-            verbose=True,
-            allow_delegation=False,
-            tools=[],
-        ) 
+    # def literary_editor_agent(self):
+    #     """
+    #     Creates a literary editor agent that improves the writing style and readability.
+    #     """
+    #     return Agent(
+    #         role="Literary Editor",
+    #         goal="Enhance the literary quality and readability of the content",
+    #         backstory="""fix typos and grammar errors, improve the flow and readability of the text""",
+    #         verbose=True,
+    #         allow_delegation=False,
+    #         tools=[],
+    #     ) 

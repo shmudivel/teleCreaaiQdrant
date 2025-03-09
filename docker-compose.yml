@@ -3,7 +3,7 @@ version: '3.8'
 services:
   bot:
     build: .
-    env_file: .env
+    env_file: .env.prod
     environment:
       - PYTHONPATH=/app
     volumes:

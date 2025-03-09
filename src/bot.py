@@ -3,14 +3,17 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 import os
 from dotenv import load_dotenv
 from crewai import Crew
+import logging
+import asyncio
+import sys
+
+# Add the current directory to the Python path to enable imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Use proper imports with src prefix
 from src.platforms.factory import PlatformFactory
 from src.text_splitter import split_text_into_parts
-import logging
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from datetime import datetime
-import re
-import asyncio
+from src.utils.google_services import extract_doc_id, read_from_google_doc, save_to_google_drive
 
 # Enable logging
 logging.basicConfig(
@@ -18,136 +21,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-def extract_doc_id(url):
-    """Extract Google Doc ID from URL."""
-    patterns = [
-        r'/document/d/([a-zA-Z0-9-_]+)',  # Standard Doc URL
-        r'docs.google.com/document/d/([a-zA-Z0-9-_]+)',  # Shared Doc URL
-        r'^([a-zA-Z0-9-_]+)$'  # Direct ID
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
-
-def read_from_google_doc(doc_id):
-    """Read content from a Google Doc."""
-    try:
-        credentials = service_account.Credentials.from_service_account_file(
-            './bustling-folio-439811-h8-539f8ab05fa7.json',
-            scopes=['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
-        )
-
-        # Build the Docs API service
-        docs_service = build('docs', 'v1', credentials=credentials)
-        
-        # Get the document content
-        document = docs_service.documents().get(documentId=doc_id).execute()
-        
-        # Extract text from the document
-        doc_content = ''
-        for element in document.get('body').get('content'):
-            if 'paragraph' in element:
-                for para_element in element.get('paragraph').get('elements'):
-                    if 'textRun' in para_element:
-                        doc_content += para_element.get('textRun').get('content')
-        
-        return doc_content.strip()
-
-    except Exception as e:
-        logger.error(f"Error reading from Google Doc: {str(e)}")
-        return None
-
-def save_to_google_drive(text, comment, platform):
-    try:
-        credentials = service_account.Credentials.from_service_account_file(
-            './bustling-folio-439811-h8-539f8ab05fa7.json',
-            scopes=['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
-        )
-
-        drive_service = build('drive', 'v3', credentials=credentials)
-
-        # Create or get the folder
-        folder_name = "Social Media Responses"
-        folders_result = drive_service.files().list(
-            q=f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'",
-            spaces='drive',
-            fields='files(id, name)'
-        ).execute()
-
-        if not folders_result.get('files'):
-            folder_metadata = {
-                'name': folder_name,
-                'mimeType': 'application/vnd.google-apps.folder'
-            }
-            folder = drive_service.files().create(
-                body=folder_metadata,
-                fields='id'
-            ).execute()
-            folder_id = folder.get('id')
-        else:
-            folder_id = folders_result.get('files')[0].get('id')
-
-        # Create a new document with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        doc_name = f"Response_{platform}_{timestamp}"
-        
-        file_metadata = {
-            'name': doc_name,
-            'mimeType': 'application/vnd.google-apps.document',
-            'parents': [folder_id]
-        }
-
-        file = drive_service.files().create(
-            body=file_metadata,
-            fields='id, name, webViewLink'
-        ).execute()
-
-        # Share the file
-        permission = {
-            'type': 'user',
-            'role': 'writer',
-            'emailAddress': 'shmudivel@gmail.com'
-        }
-
-        drive_service.permissions().create(
-            fileId=file['id'],
-            body=permission,
-            sendNotificationEmail=False
-        ).execute()
-
-        # Format the content
-        content = f"""Generated Response:
-{text}
-
-Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
-
-        # Update the document content using Docs API
-        docs_service = build('docs', 'v1', credentials=credentials)
-        docs_service.documents().batchUpdate(
-            documentId=file['id'],
-            body={
-                'requests': [
-                    {
-                        'insertText': {
-                            'location': {
-                                'index': 1
-                            },
-                            'text': content
-                        }
-                    }
-                ]
-            }
-        ).execute()
-
-        return file.get('webViewLink')
-
-    except Exception as e:
-        logger.error(f"Error saving to Google Drive: {str(e)}")
-        return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
@@ -231,8 +104,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None):
     """Process the content for the selected platform."""
+    from src.utils.content_processor import process_content_parts
+    
     try:
-        # Добавлена проверка наличиния сообщений
+        # Check if we have messages to process
         if not context.user_data.get('messages') or len(context.user_data['messages']) < 1:
             await update.message.reply_text("❌ Ошибка: Нет сообщения для обработки")
             return
@@ -240,121 +115,39 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, me
         source_content = context.user_data['messages'][0]
         platform = context.user_data.get('selected_platform', 'dzen')  # Default to dzen if not specified
         
-        # Get platform-specific agents and tasks
-        agents_class = PlatformFactory.get_platform_agents(platform)
-        tasks_class = PlatformFactory.get_platform_tasks(platform)
-        
         # Split text into 4 parts
         content_parts = split_text_into_parts(source_content, 4)
         
-        # Validate that we have enough parts
-        if len(content_parts) < 4:
-            logger.warning(f"Not enough parts generated. Expected at least 4, got {len(content_parts)}")
-            # Pad the parts list with empty strings if needed
-            while len(content_parts) < 4:
-                content_parts.append("")
+        # Process content with helper function
+        results = await process_content_parts(platform, content_parts, message or update.message)
         
-        # Create all four agents
-        content_agent1 = agents_class.content_creator_agent()
-        content_agent2 = agents_class.content_creator_agent_part2()
-        content_agent3 = agents_class.content_creator_agent_part3()
-        content_agent4 = agents_class.content_creator_agent_part4()
-        
-        # Create tasks for each part
-        creation_task1 = tasks_class.content_creation_task(content_agent1, content_parts[0])
-        creation_task2 = tasks_class.content_creation_task_part2(content_agent2, content_parts[1])
-        creation_task3 = tasks_class.content_creation_task_part3(content_agent3, content_parts[2])
-        creation_task4 = tasks_class.content_creation_task_part4(content_agent4, content_parts[3])
-        
-        # Set up the crew with all agents and tasks
-        crew = Crew(
-            agents=[content_agent1, content_agent2, content_agent3, content_agent4],
-            tasks=[creation_task1, creation_task2, creation_task3, creation_task4]
-        )
-        
-        msg_to_edit = message if message else update.message
-        await msg_to_edit.reply_text("Начинаю обработку контента (это может занять некоторое время)...")
-        
-        # Run all tasks
-        result = crew.kickoff()
-        
-        # Combine all results
-        combined_output = f"""
---- Part 1 ---
-{creation_task1.output}
-
---- Part 2 ---
-{creation_task2.output}
-
---- Part 3 ---
-{creation_task3.output}
-
---- Part 4 ---
-{creation_task4.output}
-"""
-        
-        # Create final editor agent
-        final_editor = agents_class.final_editor_agent()
-        
-        # Create task for final editing
-        final_editing_task = tasks_class.final_editing_task(final_editor, combined_output)
-        
-        # Final crew with final editor only
-        final_crew = Crew(
-            agents=[final_editor],
-            tasks=[final_editing_task]
-        )
-
-        await msg_to_edit.reply_text("Выполняю финальную редакцию поста...")
-
-        # Run final editing
-        final_result = final_crew.kickoff()
-
-        # Get platform display name for the document
-        platforms = PlatformFactory.get_available_platforms()
-        platform_name = platforms.get(platform, platform)
-
-        # Use the final edited result for saving
-        post_link = save_to_google_drive(
-            final_editing_task.output, 
-            source_content, 
-            platform_name
-        )
-        
-        # Send the result
-        await msg_to_edit.reply_text(f"✅ Пост для {platform_name} готов!")
-        
-        if post_link:
-            await msg_to_edit.reply_text(f"Ссылка на пост: {post_link}")
-        
-        context.user_data['messages'] = []
-        
+        if results:
+            # Reset user_data for next interaction
+            context.user_data.clear()
+    
     except Exception as e:
         logger.error(f"Error processing content: {str(e)}")
-        msg_to_edit = message if message else update.message
-        await msg_to_edit.reply_text(f"Произошла ошибка при обработке контента: {str(e)}")
-        context.user_data['messages'] = []
+        if message:
+            await message.reply_text(f"❌ Произошла ошибка при обработке контента: {str(e)}")
+        else:
+            await update.message.reply_text(f"❌ Произошла ошибка при обработке контента: {str(e)}")
 
 def main():
     """Start the bot."""
     # Load environment variables
     load_dotenv()
     
-    # Create the Application
-    application = Application.builder().token(os.getenv('BOT_TOKEN')).build()
-
-    # Add command handlers
+    # Create the Application and pass your bot's token
+    application = Application.builder().token(os.getenv("BOT_TOKEN")).build()
+    
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
-    
-    # Add message handler
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CallbackQueryHandler(handle_platform_selection, pattern="^platform_"))
     
-    # Add callback query handler for platform selection
-    application.add_handler(CallbackQueryHandler(handle_platform_selection, pattern=r'^platform_'))
-
     # Run the bot until the user presses Ctrl-C
     application.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main() 

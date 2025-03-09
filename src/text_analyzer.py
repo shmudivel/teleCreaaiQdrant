@@ -1,5 +1,13 @@
 from openai import OpenAI
 import os
+from dotenv import load_dotenv
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 def analyze_text_structure(text):
     """
@@ -14,48 +22,38 @@ def analyze_text_structure(text):
     Returns:
         str: A structured outline of the text content
     """
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        prompt = """
+        Анализ части текста:
+        
+        1. Развернуто прописать тон и характер текста
+        2. Выписать все факты и цифры из текста
+        3. Если есть опыт или истории Сергея Черненко, то выписать их
+        4. Написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
+        
+        Сохранить все пометки "--- Part X ---" из входного текста.
+        """
+        
+        # Use the environment variable to select the model
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-2024-11-20")
+        
+        # Ensure the text is not too long for the API
+        max_length = 30000  # Safe limit for most models
+        truncated_text = text[:max_length] if len(text) > max_length else text
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{
+                "role": "user",
+                "content": f"{prompt}\n\n{truncated_text}"
+            }]
+        )
+        
+        return response.choices[0].message.content
     
-    prompt = """
-
-    главная мысль текста: не уходите в свой бизнес, продолжайте работать в найме
-
-    НЕ ТРОГАТЬ пометку "--- Part 1 ---", 
-    развернуто прописать тон и характер текста
-    выписать все факты и цифры из текста
-    если есть опыт или истории Сергея Черненко, то выписать их
-    написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
-    
-    НЕ ТРОГАТЬ пометку "--- Part 2 ---", 
-    развернуто прописать тон и характер текста
-    выписать все факты и цифры из текста
-    если есть опыт или истории Сергея Черненко, то выписать их
-    написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
-
-    НЕ ТРОГАТЬ пометку "--- Part 3 ---", 
-    развернуто прописать тон и характер текста
-    выписать все факты и цифры из текста
-    если есть опыт или истории Сергея Черненко, то выписать их
-    написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
-
-    НЕ ТРОГАТЬ пометку "--- Part 4 ---"
-    развернуто прописать тон и характер текста
-    выписать все факты и цифры из текста
-    если есть опыт или истории Сергея Черненко, то выписать их
-    написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
-    
-    
-
-    
-
-    """
-    
-    response = client.chat.completions.create(
-        model="gpt-4o-2024-11-20",
-        messages=[{
-            "role": "user",
-            "content": f"{prompt}\n\n{text[:30000]}"  # Truncate to fit context
-        }]
-    )
-    
-    return response.choices[0].message.content 
+    except Exception as e:
+        logger.error(f"Error in analyze_text_structure: {str(e)}")
+        # Return original text if analysis fails
+        return f"Error analyzing text: {str(e)}\n\n{text}" 

@@ -2,25 +2,35 @@ import logging
 from crewai import Crew
 from src.platforms.factory import PlatformFactory
 from src.utils.google_services import save_to_google_drive
+from src.text_splitter import split_text_into_parts
+import json
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-async def process_content_parts(platform, content_parts, message):
+async def process_content_parts(platform, content_parts_data, message):
     """
     Process content parts with CrewAI and platform-specific agents.
     
     Args:
         platform (str): Platform identifier (e.g., 'dzen', 'vc')
-        content_parts (list): List of split text parts to process
+        content_parts_data (tuple): Tuple containing (analyzed_parts, insights_processor)
         message (telegram.Message): Message object for updating the user
         
     Returns:
         bool: True if processing was successful, False otherwise
     """
     try:
+        # Unpack the content parts data
+        if isinstance(content_parts_data, tuple) and len(content_parts_data) == 2:
+            content_parts, insights_processor = content_parts_data
+        else:
+            # For backward compatibility
+            content_parts = content_parts_data
+            insights_processor = None
+            
         # Get platform-specific agents and tasks
-        agents_class = PlatformFactory.get_platform_agents(platform)
+        agents_class = PlatformFactory.get_platform_agents(platform, insights_processor)
         tasks_class = PlatformFactory.get_platform_tasks(platform)
         
         # Validate that we have enough parts
@@ -30,7 +40,7 @@ async def process_content_parts(platform, content_parts, message):
             while len(content_parts) < 4:
                 content_parts.append("")
         
-        # Create all four agents
+        # Create agents with insights
         content_agent1 = agents_class.content_creator_agent()
         content_agent2 = agents_class.content_creator_agent_part2()
         content_agent3 = agents_class.content_creator_agent_part3()

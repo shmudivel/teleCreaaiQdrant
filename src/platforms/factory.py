@@ -21,12 +21,27 @@ class PlatformFactory:
     }
     
     @classmethod
-    def get_platform_agents(cls, platform_name: str):
-        """Get the agents for the specified platform."""
+    def get_platform_agents(cls, platform_name: str, insights_processor=None):
+        """
+        Get the agents for the specified platform.
+        
+        Args:
+            platform_name (str): The name of the platform
+            insights_processor: Optional ContentInsightsProcessor instance
+        
+        Returns:
+            The platform-specific agents class instance
+        """
         if platform_name not in cls.PLATFORMS:
             raise ValueError(f"Unsupported platform: {platform_name}")
         
-        return cls.PLATFORMS[platform_name]["agents"]()
+        agent_class = cls.PLATFORMS[platform_name]["agents"]
+        
+        # If the platform accepts insights_processor and one is provided, pass it
+        if insights_processor is not None:
+            return agent_class(insights_processor=insights_processor)
+        
+        return agent_class()
     
     @classmethod
     def get_platform_tasks(cls, platform_name: str):

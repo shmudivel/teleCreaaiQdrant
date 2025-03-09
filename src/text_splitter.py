@@ -1,5 +1,6 @@
 import re
 from src.text_analyzer import analyze_text_structure
+from src.utils.content_insights import ContentInsightsProcessor
 
 def split_text_into_parts(text, num_parts=4):
     """
@@ -10,7 +11,7 @@ def split_text_into_parts(text, num_parts=4):
         num_parts (int): Number of parts to split the text into (default: 4)
         
     Returns:
-        list: A list containing the analyzed text parts
+        tuple: A tuple containing (analyzed_parts, insights_processor)
     """
     # Calculate the approximate length of each part
     total_length = len(text)
@@ -56,7 +57,11 @@ def split_text_into_parts(text, num_parts=4):
     # Now analyze the structure of each part
     analyzed_parts = [analyze_text_structure(part) for part in parts]
     
-    return analyzed_parts
+    # Create a content insights processor
+    insights_processor = ContentInsightsProcessor(analyzed_parts)
+    
+    # Return both analyzed parts and the insights processor
+    return (analyzed_parts, insights_processor)
 
 if __name__ == "__main__":
     # Example usage

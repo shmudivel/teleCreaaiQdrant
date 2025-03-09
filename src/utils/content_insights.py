@@ -27,6 +27,10 @@ class ContentInsightsProcessor:
         }
         self.expertise = []
         
+        # Store the original analyzed parts for full analysis access
+        self.original_parts = analyzed_parts
+        self.full_analysis_data = None
+        
         # Process each part
         for i, part_json in enumerate(analyzed_parts):
             try:
@@ -40,6 +44,18 @@ class ContentInsightsProcessor:
                     "raw_text": part_json,
                     "is_structured": False
                 })
+                
+        # Try to parse the first part for full analysis access (if it's in the new format)
+        if analyzed_parts and len(analyzed_parts) > 0:
+            try:
+                first_part = analyzed_parts[0]
+                data = json.loads(first_part) if isinstance(first_part, str) else first_part
+                
+                # Check if this is in the new format with holistic_analysis
+                if "holistic_analysis" in data or "dzen_potential" in data:
+                    self.full_analysis_data = data
+            except Exception:
+                pass
     
     def _process_part(self, part_json, part_num):
         """Process a single part JSON."""
@@ -109,6 +125,88 @@ class ContentInsightsProcessor:
         
         return enhancement
     
+    def get_full_analysis(self):
+        """
+        Get the full analysis data for all parts.
+        This is used by the new enhanced agents to access detailed style and tone information.
+        
+        Returns:
+            dict or None: The full analysis data if available, or None if not available
+        """
+        # If we have the new format data already parsed, return it
+        if self.full_analysis_data:
+            return self.full_analysis_data
+            
+        # If not, try to combine the original parts into a unified structure
+        # This is for backward compatibility
+        if not self.original_parts or len(self.original_parts) == 0:
+            return None
+            
+        try:
+            # Try to use the first part as a template for the full structure
+            first_part = self.original_parts[0]
+            combined_data = json.loads(first_part) if isinstance(first_part, str) else first_part
+            
+            # Create a minimal structure if we can't parse the first part properly
+            if not isinstance(combined_data, dict):
+                combined_data = {
+                    "parts": [],
+                    "holistic_analysis": {
+                        "overall_style": "Не определен",
+                        "coherence": "Не определена",
+                        "emotional_triggers": [],
+                        "author_uniqueness": []
+                    },
+                    "dzen_potential": {
+                        "attention_hooks": self.engagement_data.get("headline_triggers", []),
+                        "emotional_points": self.engagement_data.get("emotional_points", []),
+                        "discussion_topics": self.engagement_data.get("discussion_topics", []),
+                        "audience_relevance": "Не определена"
+                    }
+                }
+            
+            # Make sure we have the parts key
+            if "parts" not in combined_data:
+                combined_data["parts"] = []
+                
+            # Add each processed part
+            for i, part in enumerate(self.parts):
+                if i < len(combined_data["parts"]):
+                    continue  # Skip if already in the structure
+                    
+                # Create a compatible part structure
+                new_part = {
+                    "marker": part.get("marker", f"--- Part {i+1} ---"),
+                    "tone_analysis": {
+                        "emotional_tone": part.get("tone", "Не определен"),
+                        "lexical_features": "Не определены",
+                        "syntax_patterns": "Не определены",
+                        "rhetorical_devices": "Не определены",
+                        "author_voice": "Не определен"
+                    },
+                    "key_elements": {
+                        "facts": part.get("facts", []),
+                        "personal_stories": part.get("personal_stories", []),
+                        "main_ideas": [],
+                        "unique_insights": []
+                    },
+                    "content_analysis": {
+                        "main_idea": "Не определена",
+                        "paragraph_connections": "Не определены",
+                        "key_essence": part.get("key_essence", "Не определена"),
+                        "logic_path": "Не определен",
+                        "author_intention": "Не определена"
+                    }
+                }
+                
+                combined_data["parts"].append(new_part)
+                
+            return combined_data
+                
+        except Exception as e:
+            logger.warning(f"Error creating full analysis: {str(e)}")
+            return None
+    
     def _get_relevant_headline_triggers(self, part_num):
         """Get headline triggers relevant to this part."""
         # For part 1, we want all headline triggers
@@ -150,4 +248,39 @@ class ContentInsightsProcessor:
             "all_emotional_points": self.engagement_data.get("emotional_points", []),
             "discussion_topics": self.engagement_data.get("discussion_topics", []),
             "expertise": self.expertise
-        } 
+        }
+        
+    def get_final_enhancement(self):
+        """
+        Get enhancement data for final editing.
+        Used by the new enhanced DzenAgents for final editing.
+        This method is for compatibility with the updated agents.
+        
+        Returns:
+            dict: Enhancement data with holistic analysis for final editing
+        """
+        # Try to get holistic analysis from full analysis
+        full_data = self.get_full_analysis()
+        
+        if full_data and isinstance(full_data, dict):
+            try:
+                # Extract holistic analysis and dzen potential
+                holistic = full_data.get("holistic_analysis", {})
+                dzen_data = full_data.get("dzen_potential", {})
+                
+                # Combine into a unified format
+                return {
+                    "overall_style": holistic.get("overall_style", "Не определен"),
+                    "coherence": holistic.get("coherence", "Не определена"),
+                    "emotional_triggers": holistic.get("emotional_triggers", []),
+                    "author_uniqueness": holistic.get("author_uniqueness", []),
+                    "attention_hooks": dzen_data.get("attention_hooks", []),
+                    "emotional_points": dzen_data.get("emotional_points", []),
+                    "discussion_topics": dzen_data.get("discussion_topics", []),
+                    "audience_relevance": dzen_data.get("audience_relevance", "Не определена")
+                }
+            except Exception as e:
+                logger.warning(f"Error extracting final enhancement: {str(e)}")
+        
+        # Fall back to the older format if needed
+        return self.get_final_editing_data() 

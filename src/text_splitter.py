@@ -13,54 +13,100 @@ def split_text_into_parts(text, num_parts=4):
     Returns:
         tuple: A tuple containing (analyzed_parts, insights_processor)
     """
-    # Calculate the approximate length of each part
-    total_length = len(text)
-    part_length = total_length // num_parts
+    # First, identify semantic sections based on headings and paragraph blocks
+    # This helps preserve the original text's logical structure
+    semantic_blocks = []
     
+    # Find headings (lines that end with colon or have special formatting)
+    heading_pattern = re.compile(r'^.{5,100}:[ \t]*$|^[A-ZА-Я\d][A-ZА-Я\d .,:;!?-]{5,100}$', re.MULTILINE)
+    heading_matches = list(heading_pattern.finditer(text))
+    
+    # If no clear headings are found, fall back to paragraph blocks
+    if not heading_matches or len(heading_matches) < num_parts - 1:
+        # Split by empty lines (paragraph breaks)
+        paragraphs = re.split(r'\n\s*\n', text)
+        
+        # Group paragraphs into semantic blocks
+        current_block = []
+        for para in paragraphs:
+            current_block.append(para)
+            # Create a new block threshold based on content length and semantics
+            if len(''.join(current_block)) > len(text) / (num_parts * 1.5) and len(current_block) >= 2:
+                semantic_blocks.append('\n\n'.join(current_block))
+                current_block = []
+        
+        # Add any remaining paragraphs
+        if current_block:
+            semantic_blocks.append('\n\n'.join(current_block))
+    else:
+        # Use headings to define semantic blocks
+        prev_pos = 0
+        for match in heading_matches:
+            if match.start() > prev_pos:
+                semantic_blocks.append(text[prev_pos:match.start()])
+            prev_pos = match.start()
+        
+        # Add the final block
+        if prev_pos < len(text):
+            semantic_blocks.append(text[prev_pos:])
+    
+    # Adjust the blocks to match the desired number of parts
     parts = []
-    start_index = 0
-    
-    for i in range(num_parts - 1):
-        # Find the nearest natural boundary after the calculated part length
-        end_index = start_index + part_length
-        
-        # Adjust end_index to avoid splitting words/sentences
-        if end_index < total_length:
-            # First try to find paragraph breaks (highest priority)
-            paragraph_break = re.search(r'\n\s*\n', text[end_index:end_index + 500])
+    if len(semantic_blocks) < num_parts:
+        # If we have fewer blocks than needed, split the largest blocks
+        while len(semantic_blocks) < num_parts:
+            # Find the largest block
+            largest_idx = max(range(len(semantic_blocks)), key=lambda i: len(semantic_blocks[i]))
+            largest_block = semantic_blocks.pop(largest_idx)
+            
+            # Split the largest block approximately in half, but at a paragraph boundary
+            mid_point = len(largest_block) // 2
+            paragraph_break = re.search(r'\n\s*\n', largest_block[mid_point:mid_point + 500])
+            
             if paragraph_break:
-                end_index += paragraph_break.start() + 1
+                split_point = mid_point + paragraph_break.start() + 1
             else:
-                # Next try to find sentence boundaries
-                substring = text[end_index:]
-                # Look for punctuation followed by whitespace or end of string
-                match = re.search(r'(?<=[.!?])\s+', substring)
-                if match:
-                    end_index += match.end()  # Split after punctuation and whitespace
+                # Try to find a sentence boundary
+                sentence_match = re.search(r'(?<=[.!?])\s+', largest_block[mid_point:mid_point + 200])
+                if sentence_match:
+                    split_point = mid_point + sentence_match.end()
                 else:
-                    # Try to find a newline
-                    newline_pos = text.find('\n', end_index)
-                    space_pos = text.find(' ', end_index)
-                    
-                    if newline_pos != -1 and (space_pos == -1 or newline_pos < space_pos):
-                        end_index = newline_pos + 1
-                    elif space_pos != -1:
-                        end_index = space_pos + 1
-        
-        # Add the part to our list
-        parts.append(text[start_index:end_index])
-        start_index = end_index
+                    # Just split at the midpoint as a last resort
+                    split_point = mid_point
+            
+            semantic_blocks.insert(largest_idx, largest_block[:split_point])
+            semantic_blocks.insert(largest_idx + 1, largest_block[split_point:])
     
-    # Add the last part (remaining text)
-    parts.append(text[start_index:])
+    elif len(semantic_blocks) > num_parts:
+        # If we have more blocks than needed, merge smaller adjacent blocks
+        while len(semantic_blocks) > num_parts:
+            # Find the smallest adjacent pair of blocks
+            smallest_pair_idx = min(range(len(semantic_blocks) - 1), 
+                                   key=lambda i: len(semantic_blocks[i]) + len(semantic_blocks[i+1]))
+            
+            # Merge them
+            merged_block = semantic_blocks[smallest_pair_idx] + "\n\n" + semantic_blocks[smallest_pair_idx + 1]
+            semantic_blocks[smallest_pair_idx] = merged_block
+            semantic_blocks.pop(smallest_pair_idx + 1)
     
-    # Now analyze the structure of each part
-    analyzed_parts = [analyze_text_structure(part) for part in parts]
+    # Use the semantic blocks as our parts
+    parts = semantic_blocks[:num_parts]
+    
+    # Make sure we have exactly the number of parts requested
+    while len(parts) < num_parts:
+        parts.append("")  # Pad with empty strings if needed
+    
+    # Analyze each part
+    analyzed_parts = []
+    for i, part in enumerate(parts):
+        # Add part marker for reference
+        marked_part = f"--- Part {i+1} ---\n{part}"
+        analyzed_part = analyze_text_structure(marked_part)
+        analyzed_parts.append(analyzed_part)
     
     # Create a content insights processor
     insights_processor = ContentInsightsProcessor(analyzed_parts)
     
-    # Return both analyzed parts and the insights processor
     return (analyzed_parts, insights_processor)
 
 if __name__ == "__main__":
@@ -85,7 +131,7 @@ if __name__ == "__main__":
             print(f"Invalid number of parts: {sys.argv[2]}. Using default (4).")
     
     # Split the text
-    parts = split_text_into_parts(input_text, num_parts)
+    parts, _ = split_text_into_parts(input_text, num_parts)
     
     # Print or save the parts
     with open("all_parts.txt", 'w', encoding='utf-8') as output_file:

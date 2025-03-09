@@ -37,60 +37,82 @@ def analyze_text_structure(text):
             
             Для каждой части:
             
-            НЕ ТРОГАТЬ пометку "--- Part 1 ---", 
-            развернуто прописать тон и характер текста
-            выписать все факты и цифры из текста
-            если есть опыт или истории Сергея Черненко, то выписать их
-            написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
-            выделить основную суть текста - ключевые идеи, которые делают его ценным для читателя
+            НЕ ТРОГАТЬ пометку "--- Part 1 ---", "--- Part 2 ---", и т.д.
             
-            НЕ ТРОГАТЬ пометку "--- Part 2 ---", 
-            развернуто прописать тон и характер текста
-            выписать все факты и цифры из текста
-            если есть опыт или истории Сергея Черненко, то выписать их
-            написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
-            выделить основную суть текста - ключевые идеи, которые делают его ценным для читателя
+            1. ТЩАТЕЛЬНО ПРОАНАЛИЗИРОВАТЬ ТОН И СТИЛЬ автора:
+               - Определить эмоциональный тон (формальный, неформальный, агрессивный, мотивирующий и т.д.)
+               - Выявить лексические особенности (экспертные термины, разговорные выражения)
+               - Определить синтаксические особенности (длина предложений, сложность структуры)
+               - Определить риторические приемы (метафоры, аналогии, истории)
+               - Выделить авторский "голос" и манеру изложения мыслей
             
-            НЕ ТРОГАТЬ пометку "--- Part 3 ---", 
-            развернуто прописать тон и характер текста
-            выписать все факты и цифры из текста
-            если есть опыт или истории Сергея Черненко, то выписать их
-            написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
-            выделить основную суть текста - ключевые идеи, которые делают его ценным для читателя
+            2. ВЫДЕЛИТЬ КЛЮЧЕВЫЕ ЭЛЕМЕНТЫ:
+               - Все факты и цифры из текста
+               - Истории и личный опыт автора
+               - Основные идеи и аргументы
+               - Уникальные инсайты и экспертные знания
             
-            НЕ ТРОГАТЬ пометку "--- Part 4 ---",
-            развернуто прописать тон и характер текста
-            выписать все факты и цифры из текста
-            если есть опыт или истории Сергея Черненко, то выписать их
-            написать глубокий анализ текста -- помеченный форматом 1, 1.1, 1.1.1
-            выделить основную суть текста - ключевые идеи, которые делают его ценным для читателя
+            3. ГЛУБОКИЙ АНАЛИЗ СОДЕРЖАНИЯ:
+               - Определить главную идею каждой части
+               - Выявить логические связи между абзацами
+               - Выделить основную суть текста и его ценность для читателя
+               - Найти причинно-следственные связи в аргументации
+               - Определить цель автора и послание к аудитории
             
-            В конце анализа добавить для всего текста:
-            1. Определить, какие элементы сделают контент привлекательным для аудитории Дзен:
+            В конце анализа добавить:
+            1. ЦЕЛОСТНЫЙ АНАЛИЗ текста:
+               - Обобщение основной стилистики и тона всего текста
+               - Связность и логика изложения между частями
+               - Главные эмоциональные триггеры и якоря внимания
+               - Авторские особенности, делающие текст уникальным
+            
+            2. ПОТЕНЦИАЛ ДЛЯ ДЗЕН:
+               - Определить элементы, которые сделают контент привлекательным для аудитории Дзен
                - Потенциальные триггеры для заголовков
                - Точки эмоционального вовлечения
                - Темы, которые могут вызвать дискуссию
-            2. Идентифицировать уникальные экспертные знания автора, которые можно подчеркнуть
+               - Соответствие интересам целевой аудитории
             
             ВАЖНО: верни ответ в следующем JSON формате:
             {
               "parts": [
                 {
                   "marker": "--- Part 1 ---",
-                  "tone": "описание тона и характера",
-                  "facts": ["факт 1", "факт 2", ...],
-                  "personal_stories": ["история 1", ...],
-                  "analysis": {"1": "...", "1.1": "...", ...},
-                  "key_essence": "основная суть этой части"
+                  "tone_analysis": {
+                    "emotional_tone": "описание эмоционального тона",
+                    "lexical_features": "особенности лексики",
+                    "syntax_patterns": "синтаксические особенности",
+                    "rhetorical_devices": "риторические приемы",
+                    "author_voice": "авторский голос и манера"
+                  },
+                  "key_elements": {
+                    "facts": ["факт 1", "факт 2", ...],
+                    "personal_stories": ["история 1", ...],
+                    "main_ideas": ["идея 1", "идея 2", ...],
+                    "unique_insights": ["инсайт 1", ...]
+                  },
+                  "content_analysis": {
+                    "main_idea": "главная идея части",
+                    "paragraph_connections": "связи между абзацами",
+                    "key_essence": "основная суть текста",
+                    "logic_path": "логический путь аргументации",
+                    "author_intention": "цель автора в этой части"
+                  }
                 },
                 // аналогично для других частей
               ],
-              "engagement": {
-                "headline_triggers": ["триггер 1", "триггер 2", ...],
-                "emotional_points": ["точка 1", "точка 2", ...],
-                "discussion_topics": ["тема 1", "тема 2", ...]
+              "holistic_analysis": {
+                "overall_style": "обобщение стиля всего текста",
+                "coherence": "связность между частями",
+                "emotional_triggers": ["триггер 1", "триггер 2", ...],
+                "author_uniqueness": ["особенность 1", "особенность 2", ...]
               },
-              "expertise": ["экспертные знания 1", "экспертные знания 2", ...]
+              "dzen_potential": {
+                "attention_hooks": ["крючок 1", "крючок 2", ...],
+                "emotional_points": ["точка 1", "точка 2", ...],
+                "discussion_topics": ["тема 1", "тема 2", ...],
+                "audience_relevance": "соответствие интересам целевой аудитории"
+              }
             }
             """
             
@@ -142,7 +164,7 @@ def analyze_text_structure(text):
             
             response = client.chat.completions.create(
                 model=model,
-                temperature=0.7,  # Add creativity parameter - higher values for more creative analysis
+                temperature=0.6,  # Slightly lower temperature for more accurate tone analysis
                 response_format={"type": "json_object"},  # Request JSON response
                 messages=[{
                     "role": "user",
@@ -180,11 +202,11 @@ def extract_insights(analysis_json, insight_type=None):
     Args:
         analysis_json (str): JSON string from analyze_text_structure
         insight_type (str, optional): Type of insight to extract. Options:
-            - 'headline_triggers' - Get potential headline hooks
-            - 'key_essence' - Get the key essence from all parts
-            - 'expertise' - Get author's expertise highlights
-            - 'facts' - Get all facts and figures
-            - 'emotional_points' - Get emotional engagement points
+            - 'tone_analysis' - Get tone analysis for all parts
+            - 'key_elements' - Get key elements from all parts
+            - 'holistic_analysis' - Get holistic analysis of the text
+            - 'dzen_potential' - Get Dzen-specific potential insights
+            - 'author_voice' - Get author's voice characteristics
             - None - Return the full parsed JSON
     
     Returns:
@@ -200,23 +222,32 @@ def extract_insights(analysis_json, insight_type=None):
         if insight_type is None:
             return data
             
-        if insight_type == 'headline_triggers':
-            return data.get('engagement', {}).get('headline_triggers', [])
+        if insight_type == 'tone_analysis':
+            return [part.get('tone_analysis', {}) for part in data.get('parts', [])]
             
-        elif insight_type == 'key_essence':
-            return [part.get('key_essence', '') for part in data.get('parts', [])]
-            
-        elif insight_type == 'expertise':
-            return data.get('expertise', [])
-            
-        elif insight_type == 'facts':
-            all_facts = []
+        elif insight_type == 'key_elements':
+            all_elements = {}
             for part in data.get('parts', []):
-                all_facts.extend(part.get('facts', []))
-            return all_facts
+                elements = part.get('key_elements', {})
+                for key, values in elements.items():
+                    if key not in all_elements:
+                        all_elements[key] = []
+                    all_elements[key].extend(values)
+            return all_elements
             
-        elif insight_type == 'emotional_points':
-            return data.get('engagement', {}).get('emotional_points', [])
+        elif insight_type == 'holistic_analysis':
+            return data.get('holistic_analysis', {})
+            
+        elif insight_type == 'dzen_potential':
+            return data.get('dzen_potential', {})
+            
+        elif insight_type == 'author_voice':
+            author_voices = []
+            for part in data.get('parts', []):
+                tone = part.get('tone_analysis', {})
+                if 'author_voice' in tone:
+                    author_voices.append(tone['author_voice'])
+            return author_voices
             
         else:
             logger.warning(f"Unknown insight type: {insight_type}")

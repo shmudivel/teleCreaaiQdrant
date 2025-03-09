@@ -1,0 +1,15 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+# Technical stack
+
+- Python for code 
+- Python for tests 
+- Qdrant for vector data base 
+- langchain 
+- docker -- i am deploying it to digitalocean droplet 
+- telegram interface 
+

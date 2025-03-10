@@ -6,6 +6,8 @@ from crewai import Crew
 import logging
 import asyncio
 import sys
+import traceback
+import html
 
 # Add the current directory to the Python path to enable imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,20 +60,40 @@ async def show_platform_selection(update: Update, context: ContextTypes.DEFAULT_
 async def handle_platform_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle platform selection via callback query."""
     query = update.callback_query
-    await query.answer()
     
-    # Extract platform from callback data
-    platform = query.data.replace("platform_", "")
-    context.user_data['selected_platform'] = platform
+    try:
+        # Try to answer the callback query, but don't fail if it's already been answered
+        try:
+            await query.answer()
+        except Exception as e:
+            logger.warning(f"Could not answer callback query: {str(e)}")
     
-    # Get the display name of the platform
-    platforms = PlatformFactory.get_available_platforms()
-    platform_name = platforms.get(platform, platform)
-    
-    await query.edit_message_text(f"Выбрана платформа: {platform_name}\n\nОтлично! Теперь я создам адаптированный пост из 4 частей... ✍️")
-    
-    # Process the content
-    await process_content(update, context, query.message)
+        # Extract platform from callback data
+        platform = query.data.replace("platform_", "")
+        context.user_data['selected_platform'] = platform
+        
+        # Get the display name of the platform
+        platforms = PlatformFactory.get_available_platforms()
+        platform_name = platforms.get(platform, platform)
+        
+        try:
+            await query.edit_message_text(f"Выбрана платформа: {platform_name}\n\nОтлично! Теперь я создам адаптированный пост из 4 частей... ✍️")
+        except Exception as e:
+            logger.warning(f"Could not edit message text: {str(e)}")
+            # If we can't edit the original message, send a new one
+            await query.message.reply_text(f"Выбрана платформа: {platform_name}\n\nОтлично! Теперь я создам адаптированный пост из 4 частей... ✍️")
+        
+        # Process the content
+        await process_content(update, context, query.message)
+        
+    except Exception as e:
+        error_msg = f"Ошибка при обработке выбора платформы: {str(e)}"
+        logger.error(error_msg)
+        try:
+            await query.message.reply_text(f"❌ {error_msg}")
+        except Exception:
+            # Last resort if everything fails
+            pass
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages and generate content using CrewAI."""
@@ -132,6 +154,35 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, me
         else:
             await update.message.reply_text(f"❌ Произошла ошибка при обработке контента: {str(e)}")
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a message to the developer."""
+    # Log the error before we do anything else
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
+    # traceback.format_exception returns the usual python exception information as a list
+    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
+    tb_string = "".join(tb_list)
+
+    # Build the message with escaped HTML tags so it looks nice
+    message = (
+        f"An exception occurred while processing an update\n"
+        f"<pre>{html.escape(tb_string)}</pre>"
+    )
+
+    # Store the message in bot_data
+    if "error_messages" not in context.bot_data:
+        context.bot_data["error_messages"] = []
+    context.bot_data["error_messages"].append(message)
+    
+    # If this was a user-triggered update, notify them
+    try:
+        if update and hasattr(update, 'effective_message') and update.effective_message:
+            await update.effective_message.reply_text(
+                "❌ Извините, произошла ошибка при обработке запроса. Попробуйте позже."
+            )
+    except Exception as e:
+        logger.error(f"Error in error handler while sending message: {str(e)}")
+
 def main():
     """Start the bot."""
     # Load environment variables
@@ -145,6 +196,9 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(handle_platform_selection, pattern="^platform_"))
+    
+    # Register the error handler
+    application.add_error_handler(error_handler)
     
     # Run the bot until the user presses Ctrl-C
     application.run_polling()

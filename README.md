@@ -45,3 +45,44 @@ To add support for a new social media platform:
 ## License
 
 MIT 
+
+## Content Quality Improvements
+
+We've made several improvements to the content generation system to address quality issues:
+
+### 1. Enhanced Task Instructions
+
+- Added explicit instructions to preserve the author's name (Сергей Черненко)
+- Created specific guidelines for proper paragraph structure
+- Added requirements for accurate statistics and financial data representation
+- Included instructions to avoid made-up terminology
+- Added guidance for proper explanation of complex concepts
+
+### 2. Updated Agent Implementations
+
+- Added ACCURACY_GUIDELINES to ensure precise factual representation
+- Added STRUCTURE_GUIDELINES to enforce proper paragraph and sentence structure
+- Improved style guide generation to better capture the original author's voice
+- Added explicit instructions to include author's name in all content
+
+### 3. Content Quality Verification
+
+- Added a ContentReviewer class to automatically check for common issues:
+  - Missing or placeholder author names
+  - Single-word sentences
+  - Awkward or made-up phrases
+  - Incorrect terminology usage
+  - Short paragraphs
+  - Statistics presented without context
+
+- Implemented automatic fixing for common issues:
+  - Replacing name placeholders with the correct author name
+  - Fixing incorrect terminology
+
+- Added quality reporting:
+  - Summary report showing all issues found
+  - Detailed report with specific problematic sections
+  
+- Integrated quality checking into the content generation pipeline
+
+These improvements help ensure that generated content maintains the original author's style, uses correct terminology, presents statistics accurately, and follows proper formatting standards. 

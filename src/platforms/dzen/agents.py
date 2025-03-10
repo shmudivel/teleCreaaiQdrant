@@ -18,6 +18,28 @@ class DzenAgents:
         - Нуждаются в практических советах по карьерному позиционированию
         ТЕЗИС - не уходите в свой бизнес, продолжайте работать в найме""")
         
+    ACCURACY_GUIDELINES = dedent("""\
+        ПРАВИЛА ТОЧНОСТИ:
+        1. ВСЕГДА использовать настоящее имя автора - Сергей Черненко (не заменять на "[Имя автора]")
+        2. Каждый термин и концепция должны быть взяты из оригинального текста - НЕ ИЗОБРЕТАТЬ новые
+        3. Сохранять оригинальную терминологию (например, использовать "дело" вместо "бизнес", если так в оригинале)
+        4. Все цифры, статистика и финансовые данные должны быть ТОЧНО как в оригинале
+        5. Все личные истории и примеры автора должны передаваться без искажений
+        6. Все профессиональные термины должны быть объяснены при первом упоминании
+        7. Избегать неоднозначных или запутанных формулировок
+        8. Не использовать академический или чрезмерно формальный язык""")
+    
+    STRUCTURE_GUIDELINES = dedent("""\
+        ПРАВИЛА СТРУКТУРЫ:
+        1. Создавать полноценные абзацы из 3-5 связанных по смыслу предложений
+        2. НЕ ИСПОЛЬЗОВАТЬ одиночные слова или короткие фразы как отдельные предложения
+        3. Избегать абзацев из одного предложения
+        4. Обеспечивать плавные переходы между предложениями и абзацами
+        5. Сохранять логическую последовательность в развитии мыслей
+        6. Использовать естественный деловой стиль речи без странных оборотов
+        7. Сохранять синтаксическую структуру, характерную для автора
+        8. Использовать авторские риторические приемы (метафоры, примеры, сравнения)""")
+    
     def __init__(self, insights_processor=None):
         """
         Initialize Dzen agents with optional content insights processor.
@@ -56,11 +78,16 @@ class DzenAgents:
                 
                 {style_guide}
                 
+                {self.ACCURACY_GUIDELINES}
+                
+                {self.STRUCTURE_GUIDELINES}
+                
                 {part_insights}
 
                 Мои задачи:
                 • Сохранить авторский голос и стиль письма исходного текста
                 • Создать захватывающее начало, при этом оставаясь верным исходному тону
+                • Использовать имя автора (Сергей Черненко) где это уместно
                 • Обеспечить плавные переходы между абзацами и логическую структуру
                 • Использовать фактические данные и истории из оригинала, не добавляя выдуманных деталей
                 • Создать контент, который будет привлекательным для аудитории Дзен"""),
@@ -85,6 +112,10 @@ class DzenAgents:
                 
                 {style_guide}
                 
+                {self.ACCURACY_GUIDELINES}
+                
+                {self.STRUCTURE_GUIDELINES}
+                
                 {part_insights}
                              
                 Мои задачи:
@@ -92,6 +123,7 @@ class DzenAgents:
                 • Сохранить авторский голос и индивидуальные особенности речи
                 • Обеспечить плавный переход от первой части ко второй
                 • Развить аргументацию и углубить основные идеи
+                • Использовать имя автора (Сергей Черненко) где это уместно
                 • Сохранить логическую структуру и причинно-следственные связи оригинала"""),
             verbose=True
         )
@@ -114,11 +146,16 @@ class DzenAgents:
                 
                 {style_guide}
                 
+                {self.ACCURACY_GUIDELINES}
+                
+                {self.STRUCTURE_GUIDELINES}
+                
                 {part_insights}
                 
                 Мои задачи:
                 • Сохранить целостность повествования и связь с предыдущими частями
                 • Углубить основные идеи, используя тот же авторский стиль
+                • Использовать имя автора (Сергей Черненко) где это уместно
                 • Использовать такие же риторические приемы, как в оригинальном тексте
                 • Конкретизировать аргументы данными и примерами из исходного материала
                 • Поддерживать эмоциональный тон и лексические особенности автора"""),
@@ -143,12 +180,17 @@ class DzenAgents:
                 
                 {style_guide}
                 
+                {self.ACCURACY_GUIDELINES}
+                
+                {self.STRUCTURE_GUIDELINES}
+                
                 {part_insights}
                 
                 Мои задачи:
                 • Создать мощное заключение в тоне и стиле автора
                 • Сохранить целостность повествования и связь с предыдущими частями
                 • Подвести итоги, следуя логике авторской аргументации
+                • Использовать имя автора (Сергей Черненко) где это уместно
                 • Сформулировать призыв к действию, соответствующий авторскому посылу
                 • Завершить текст так, чтобы он воспринимался как единое целое"""),
             verbose=True
@@ -172,12 +214,20 @@ class DzenAgents:
                 
                 {style_guide}
                 
+                {self.ACCURACY_GUIDELINES}
+                
+                {self.STRUCTURE_GUIDELINES}
+                
                 {final_insights}
                 
                 Мои задачи:
                 • Обеспечить полную связность всех четырех частей текста
                 • Устранить стилистические несоответствия между частями
                 • Проверить логику причинно-следственных связей по всему тексту
+                • Проверить правильное использование имени автора (Сергей Черненко)
+                • Исправить любые одиночные слова, используемые как предложения
+                • Устранить короткие, отрывистые абзацы из 1-2 предложений
+                • Проверить точность всех цифр и статистических данных
                 • Сохранить целостный авторский голос и единство тона
                 • Убедиться, что текст читается как единое произведение, а не набор разрозненных частей
                 • Финализировать текст для публикации на Дзен, обеспечивая его привлекательность для целевой аудитории"""),
@@ -251,104 +301,118 @@ class DzenAgents:
         
         if isinstance(insights, dict):
             for key, value in insights.items():
-                if key not in ["error", "part"]:
-                    if isinstance(value, list):
-                        formatted += f"{key.upper()}:\n"
-                        for item in value:
-                            formatted += f"- {item}\n"
-                        formatted += "\n"
-                    else:
-                        formatted += f"{key.upper()}: {value}\n\n"
-                        
+                if key != "error":
+                    formatted += f"- {key}: {value}\n"
+        elif isinstance(insights, str):
+            formatted += insights
+            
         return formatted
     
     def _get_final_editing_insights(self):
-        """Get insights for final editing with focus on holistic cohesion."""
+        """Get insights for final editing from holistic analysis."""
         if not self.holistic_analysis:
             return ""
             
         try:
-            holistic = self.holistic_analysis
+            # Create a formatted insight for final editing
+            overall_style = self.holistic_analysis.get('overall_style', 'Не определен')
+            coherence = self.holistic_analysis.get('coherence', 'Не определена')
+            emotional_triggers = ', '.join(self.holistic_analysis.get('emotional_triggers', ['Не определены']))
+            author_uniqueness = ', '.join(self.holistic_analysis.get('author_uniqueness', ['Не определены']))
             
             final_insights = f"""
             ЦЕЛОСТНЫЙ АНАЛИЗ ТЕКСТА:
             
-            ОБЩИЙ СТИЛЬ И ТОН:
-            {holistic.get('overall_style', 'Не определен')}
-            
-            СВЯЗНОСТЬ МЕЖДУ ЧАСТЯМИ:
-            {holistic.get('coherence', 'Не определена')}
-            
-            ЭМОЦИОНАЛЬНЫЕ ТРИГГЕРЫ:
-            {', '.join(holistic.get('emotional_triggers', ['Не определены']))}
-            
-            АВТОРСКИЕ ОСОБЕННОСТИ:
-            {', '.join(holistic.get('author_uniqueness', ['Не определены']))}
+            - Общий стиль: {overall_style}
+            - Связность между частями: {coherence}
+            - Эмоциональные триггеры: {emotional_triggers}
+            - Уникальные авторские особенности: {author_uniqueness}
             """
             
+            # Add Dzen potential if available
+            dzen_potential = extract_insights(self.insights_processor.get_full_analysis(), 'dzen_potential')
+            if dzen_potential:
+                hooks = ', '.join(dzen_potential.get('attention_hooks', ['Не определены']))
+                emotional_points = ', '.join(dzen_potential.get('emotional_points', ['Не определены']))
+                discussion_topics = ', '.join(dzen_potential.get('discussion_topics', ['Не определены']))
+                audience_relevance = dzen_potential.get('audience_relevance', 'Не определена')
+                
+                final_insights += f"""
+                ПОТЕНЦИАЛ ДЛЯ ДЗЕН:
+                
+                - Крючки внимания: {hooks}
+                - Эмоциональные точки: {emotional_points}
+                - Темы для дискуссии: {discussion_topics}
+                - Соответствие целевой аудитории: {audience_relevance}
+                """
+                
             return final_insights
             
         except Exception:
-            # Fall back if holistic analysis isn't available
-            return self._format_final_insights(self.insights_processor.get_final_enhancement() if self.insights_processor else {})
+            # Fall back to simpler formatting
+            return self._format_final_insights(self.holistic_analysis)
     
     def _format_final_insights(self, insights):
         """Format final insights in a readable way (backward compatibility)."""
-        if not insights or insights.get("error"):
-            return ""
-            
-        formatted = "ФИНАЛЬНЫЙ АНАЛИЗ:\n\n"
+        formatted = "ЦЕЛОСТНЫЙ АНАЛИЗ ТЕКСТА:\n\n"
         
         if isinstance(insights, dict):
             for key, value in insights.items():
-                if key != "error":
-                    if isinstance(value, list):
-                        formatted += f"{key.upper()}:\n"
-                        for item in value:
-                            formatted += f"- {item}\n"
-                        formatted += "\n"
-                    else:
-                        formatted += f"{key.upper()}: {value}\n\n"
-                        
+                if isinstance(value, list):
+                    value = ', '.join(value)
+                formatted += f"- {key}: {value}\n"
+        elif isinstance(insights, str):
+            formatted += insights
+            
         return formatted
-        
+    
     def _get_style_guide(self):
-        """Generate a style guide based on holistic analysis or defaults."""
-        if self.holistic_analysis:
-            try:
-                style = self.holistic_analysis.get('overall_style', 'Профессиональный деловой стиль с элементами разговорной речи')
+        """Get a style guide based on analysis or default guidelines."""
+        if not self.holistic_analysis:
+            return dedent("""\
+                СТИЛИСТИЧЕСКОЕ РУКОВОДСТВО:
                 
-                style_guide = f"""
-                РУКОВОДСТВО ПО СТИЛЮ:
+                • Использовать деловой, но доступный стиль письма
+                • Сохранять авторский голос и индивидуальные особенности речи
+                • Избегать академичности и сухости изложения
+                • Адаптировать контент под целевую аудиторию, но сохранить суть и тон автора
+                • Использовать подходящие риторические приемы для удержания внимания
+                • Обеспечить четкую структуру и логические переходы между частями
+                • Следовать естественному языку автора, избегая искусственных конструкций
+                • Сохранять точность и достоверность всех фактов и данных
+                • Убедиться, что каждая часть имеет законченный смысл и встраивается в общую картину
+                • Сохранять авторское отношение к описываемым явлениям и ситуациям""")
                 
-                ОБЩИЙ СТИЛЬ: {style}
+        try:
+            # Create a style guide based on holistic analysis
+            overall_style = self.holistic_analysis.get('overall_style', '')
+            author_uniqueness = self.holistic_analysis.get('author_uniqueness', [])
+            
+            if not overall_style or not author_uniqueness:
+                return self._get_style_guide()
+                
+            uniqueness_points = '\n• '.join(author_uniqueness)
+            
+            return dedent(f"""\
+                СТИЛИСТИЧЕСКОЕ РУКОВОДСТВО (на основе анализа):
+                
+                ОБЩИЙ СТИЛЬ:
+                {overall_style}
+                
+                УНИКАЛЬНЫЕ ОСОБЕННОСТИ АВТОРА:
+                • {uniqueness_points}
                 
                 РЕКОМЕНДАЦИИ:
-                • Сохраняйте авторский голос и манеру изложения
-                • Используйте те же риторические приемы, что и в оригинале
-                • Поддерживайте синтаксические особенности автора
-                • Сохраняйте лексические характеристики исходного текста
-                • Придерживайтесь эмоционального тона оригинала
-                """
+                • Сохранять уникальный авторский голос на протяжении всего текста
+                • Воспроизводить синтаксические и лексические особенности
+                • Использовать те же риторические приемы и эмоциональные триггеры
+                • Адаптировать контент, сохраняя авторскую индивидуальность
+                • Обеспечить точность в передаче фактов и данных
+                • Сохранять логику причинно-следственных связей оригинала""")
                 
-                return style_guide
-                
-            except Exception:
-                pass
-                
-        # Default style guide if holistic analysis isn't available
-        return """
-        РУКОВОДСТВО ПО СТИЛЮ:
-        
-        ОБЩИЙ СТИЛЬ: Профессиональный деловой стиль с элементами разговорной речи
-        
-        РЕКОМЕНДАЦИИ:
-        • Сохраняйте естественность и авторский голос текста
-        • Используйте понятный, но профессиональный язык
-        • Балансируйте между экспертностью и доступностью
-        • Избегайте излишне формальных конструкций
-        • Поддерживайте единый тон на протяжении всего текста
-        """
+        except Exception:
+            # Fall back to default style guide
+            return self._get_style_guide()
 
     # def seo_optimizer_agent(self):
     #     return Agent(

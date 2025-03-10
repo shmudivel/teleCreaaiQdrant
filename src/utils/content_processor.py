@@ -3,10 +3,43 @@ from crewai import Crew
 from src.platforms.factory import PlatformFactory
 from src.utils.google_services import save_to_google_drive
 from src.text_splitter import split_text_into_parts
+from src.utils.content_reviewer import ContentReviewer
 import json
+import traceback
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+def get_task_output_as_string(task, default=""):
+    """
+    Safely extract string output from a CrewAI task.
+    
+    Args:
+        task: The CrewAI task object
+        default: Default value to return if output cannot be extracted
+        
+    Returns:
+        str: The task output as a string
+    """
+    try:
+        if task is None:
+            return default
+            
+        if task.output is None:
+            return default
+            
+        # Log the output type to help with debugging
+        logger.info(f"Task output type: {type(task.output)}")
+        
+        # Handle different output types
+        if isinstance(task.output, str):
+            return task.output
+        else:
+            # Attempt to convert to string
+            return str(task.output)
+    except Exception as e:
+        logger.error(f"Error extracting task output: {str(e)}")
+        return default
 
 async def process_content_parts(platform, content_parts_data, message):
     """
@@ -63,19 +96,31 @@ async def process_content_parts(platform, content_parts_data, message):
         # Run all tasks
         result = crew.kickoff()
         
+        # Log task output types for debugging
+        logger.info(f"Task 1 output type: {type(creation_task1.output) if hasattr(creation_task1, 'output') else 'None'}")
+        logger.info(f"Task 2 output type: {type(creation_task2.output) if hasattr(creation_task2, 'output') else 'None'}")
+        logger.info(f"Task 3 output type: {type(creation_task3.output) if hasattr(creation_task3, 'output') else 'None'}")
+        logger.info(f"Task 4 output type: {type(creation_task4.output) if hasattr(creation_task4, 'output') else 'None'}")
+        
+        # Extract task outputs as strings using the helper function
+        task1_output = get_task_output_as_string(creation_task1)
+        task2_output = get_task_output_as_string(creation_task2)
+        task3_output = get_task_output_as_string(creation_task3)
+        task4_output = get_task_output_as_string(creation_task4)
+        
         # Combine all results
         combined_output = f"""
 --- Part 1 ---
-{creation_task1.output}
+{task1_output}
 
 --- Part 2 ---
-{creation_task2.output}
+{task2_output}
 
 --- Part 3 ---
-{creation_task3.output}
+{task3_output}
 
 --- Part 4 ---
-{creation_task4.output}
+{task4_output}
 """
         
         # Create final editor agent
@@ -94,14 +139,57 @@ async def process_content_parts(platform, content_parts_data, message):
 
         # Run final editing
         final_result = final_crew.kickoff()
+        
+        # Log final editing task output type
+        logger.info(f"Final editing task output type: {type(final_editing_task.output) if hasattr(final_editing_task, 'output') else 'None'}")
+        
+        # Get final editing result as string
+        final_editing_result = get_task_output_as_string(final_editing_task)
+
+        # Check for quality issues using ContentReviewer
+        await message.reply_text("Проверяю качество контента...")
+        
+        content_reviewer = ContentReviewer(author_name="Сергей Черненко")
+        review_summary = content_reviewer.get_review_summary(final_editing_result)
+        
+        # If there are significant issues, try to fix them automatically
+        if "❌" in review_summary:
+            await message.reply_text("Обнаружены проблемы с контентом, выполняю автоматическое исправление...")
+            
+            # Fix common issues
+            fixed_content = content_reviewer.fix_common_issues(final_editing_result)
+            
+            # Check if there are still issues after fixing
+            post_fix_review = content_reviewer.get_review_summary(fixed_content)
+            
+            if "❌" in post_fix_review:
+                # If there are still issues, log them but proceed with the fixed content
+                logger.warning(f"Content still has issues after automatic fixing: \n{post_fix_review}")
+                await message.reply_text("Некоторые проблемы остались, но контент улучшен. Продолжаю...")
+                
+                # Send detailed report in production environment
+                if "prod" in platform:
+                    detailed_report = content_reviewer.get_detailed_report(fixed_content)
+                    await message.reply_text(f"Детальный отчет о проблемах:\n\n{detailed_report}")
+                
+                # Use the fixed content
+                final_content = fixed_content
+            else:
+                # All issues fixed
+                await message.reply_text("Все проблемы успешно исправлены!")
+                final_content = fixed_content
+        else:
+            # No issues found
+            await message.reply_text("Контент прошел проверку качества!")
+            final_content = final_editing_result
 
         # Get platform display name for the document
         platforms = PlatformFactory.get_available_platforms()
         platform_name = platforms.get(platform, platform)
 
-        # Use the final edited result for saving
+        # Use the final reviewed and potentially fixed content for saving
         post_link = save_to_google_drive(
-            final_editing_task.output, 
+            final_content, 
             "Source content", 
             platform_name
         )
@@ -116,4 +204,6 @@ async def process_content_parts(platform, content_parts_data, message):
         
     except Exception as e:
         logger.error(f"Error in process_content_parts: {str(e)}")
-        raise e 
+        logger.error(traceback.format_exc())
+        await message.reply_text(f"❌ Произошла ошибка при обработке контента: {str(e)}")
+        return False 

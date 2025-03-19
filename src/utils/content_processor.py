@@ -6,8 +6,13 @@ from src.text_splitter import split_text_into_parts
 from src.utils.content_reviewer import ContentReviewer
 import json
 import traceback
+import inspect
 
 # Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 def get_task_output_as_string(task, default=""):
@@ -41,6 +46,34 @@ def get_task_output_as_string(task, default=""):
         logger.error(f"Error extracting task output: {str(e)}")
         return default
 
+def log_object_details(obj, prefix=""):
+    """
+    Log details about an object for debugging purposes.
+    
+    Args:
+        obj: The object to inspect
+        prefix: Prefix for log messages
+    """
+    try:
+        logger.info(f"{prefix} Object type: {type(obj)}")
+        if hasattr(obj, '__dict__'):
+            attrs = {k: v for k, v in vars(obj).items() if not k.startswith('_')}
+            logger.info(f"{prefix} Attributes: {list(attrs.keys())}")
+            
+        if hasattr(obj, 'tools'):
+            if callable(obj.tools):
+                logger.info(f"{prefix} Has tools() method")
+                try:
+                    tools = obj.tools()
+                    logger.info(f"{prefix} Tools (from method): {[t.name if hasattr(t, 'name') else type(t).__name__ for t in tools]}")
+                except Exception as e:
+                    logger.error(f"{prefix} Error calling tools() method: {str(e)}")
+            else:
+                logger.info(f"{prefix} Tools attribute: {[t.name if hasattr(t, 'name') else type(t).__name__ for t in obj.tools]}")
+    except Exception as e:
+        logger.error(f"Error logging object details: {str(e)}")
+        logger.error(traceback.format_exc())
+
 async def process_content_parts(platform, content_parts_data, message):
     """
     Process content parts with CrewAI and platform-specific agents.
@@ -63,8 +96,27 @@ async def process_content_parts(platform, content_parts_data, message):
             insights_processor = None
             
         # Get platform-specific agents and tasks
-        agents_class = PlatformFactory.get_platform_agents(platform, insights_processor)
-        tasks_class = PlatformFactory.get_platform_tasks(platform)
+        logger.info(f"Getting platform agents for: {platform}")
+        try:
+            agents_class = PlatformFactory.get_platform_agents(platform, insights_processor)
+            logger.info(f"Successfully created agents class for {platform}")
+        except Exception as e:
+            logger.error(f"Error getting platform agents: {str(e)}")
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ Ошибка при создании агентов для платформы {platform}: {str(e)}")
+            return False
+            
+        try:
+            tasks_class = PlatformFactory.get_platform_tasks(platform)
+            logger.info(f"Successfully created tasks class for {platform}")
+        except Exception as e:
+            logger.error(f"Error getting platform tasks: {str(e)}")
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ Ошибка при создании задач для платформы {platform}: {str(e)}")
+            return False
+        
+        # Log details about the agents class
+        log_object_details(agents_class, f"[{platform} AgentsClass]")
         
         # Validate that we have enough parts
         if len(content_parts) < 4:
@@ -73,28 +125,94 @@ async def process_content_parts(platform, content_parts_data, message):
             while len(content_parts) < 4:
                 content_parts.append("")
         
-        # Create agents with insights
-        content_agent1 = agents_class.content_creator_agent()
-        content_agent2 = agents_class.content_creator_agent_part2()
-        content_agent3 = agents_class.content_creator_agent_part3()
-        content_agent4 = agents_class.content_creator_agent_part4()
+        # Create agents with insights - wrap each in try/except for better error isolation
+        try:
+            logger.info("Creating content agent 1")
+            content_agent1 = agents_class.content_creator_agent()
+            log_object_details(content_agent1, "[Agent1]")
+        except Exception as e:
+            error_msg = f"Error creating agent 1: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ {error_msg}")
+            return False
+        
+        try:
+            logger.info("Creating content agent 2")
+            content_agent2 = agents_class.content_creator_agent_part2()
+            log_object_details(content_agent2, "[Agent2]")
+        except Exception as e:
+            error_msg = f"Error creating agent 2: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ {error_msg}")
+            return False
+        
+        try:
+            logger.info("Creating content agent 3")
+            content_agent3 = agents_class.content_creator_agent_part3()
+            log_object_details(content_agent3, "[Agent3]")
+        except Exception as e:
+            error_msg = f"Error creating agent 3: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ {error_msg}")
+            return False
+        
+        try:
+            logger.info("Creating content agent 4")
+            content_agent4 = agents_class.content_creator_agent_part4()
+            log_object_details(content_agent4, "[Agent4]")
+        except Exception as e:
+            error_msg = f"Error creating agent 4: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ {error_msg}")
+            return False
         
         # Create tasks for each part
-        creation_task1 = tasks_class.content_creation_task(content_agent1, content_parts[0])
-        creation_task2 = tasks_class.content_creation_task_part2(content_agent2, content_parts[1])
-        creation_task3 = tasks_class.content_creation_task_part3(content_agent3, content_parts[2])
-        creation_task4 = tasks_class.content_creation_task_part4(content_agent4, content_parts[3])
+        try:
+            logger.info("Creating content creation tasks")
+            creation_task1 = tasks_class.content_creation_task(content_agent1, content_parts[0])
+            creation_task2 = tasks_class.content_creation_task_part2(content_agent2, content_parts[1])
+            creation_task3 = tasks_class.content_creation_task_part3(content_agent3, content_parts[2])
+            creation_task4 = tasks_class.content_creation_task_part4(content_agent4, content_parts[3])
+            logger.info("Successfully created all tasks")
+        except Exception as e:
+            error_msg = f"Error creating tasks: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ {error_msg}")
+            return False
         
         # Set up the crew with all agents and tasks
-        crew = Crew(
-            agents=[content_agent1, content_agent2, content_agent3, content_agent4],
-            tasks=[creation_task1, creation_task2, creation_task3, creation_task4]
-        )
+        try:
+            logger.info("Creating crew with all agents and tasks")
+            crew = Crew(
+                agents=[content_agent1, content_agent2, content_agent3, content_agent4],
+                tasks=[creation_task1, creation_task2, creation_task3, creation_task4]
+            )
+            logger.info("Successfully created crew")
+        except Exception as e:
+            error_msg = f"Error creating crew: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ {error_msg}")
+            return False
         
         await message.reply_text("Начинаю обработку контента (это может занять некоторое время)...")
         
         # Run all tasks
-        result = crew.kickoff()
+        try:
+            logger.info("Starting crew kickoff for content creation")
+            result = crew.kickoff()
+            logger.info("Content creation crew completed")
+        except Exception as e:
+            error_msg = f"Error during crew execution: {str(e)}"
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
+            await message.reply_text(f"❌ {error_msg}")
+            return False
         
         # Log task output types for debugging
         logger.info(f"Task 1 output type: {type(creation_task1.output) if hasattr(creation_task1, 'output') else 'None'}")

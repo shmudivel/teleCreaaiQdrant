@@ -554,14 +554,14 @@ async def retrieve_and_send_logs(update, limit):
             return
         
         # Format logs as text
-        response = f"📊 Последние {len(logs)} записей из логов:\n\n"
+        response = f"📊 Последние {len(logs)} записей из логов (сначала новые):\n\n"
         
         for i, log in enumerate(logs):
             # Get first 30 chars of text
             text_preview = log.get('Text', '')[:30] + ('...' if len(log.get('Text', '')) > 30 else '')
             
-            response += f"{i+1}. User: {log.get('Telegram ID')}\n"
-            response += f"   Time: {log.get('Date and Time')}\n"
+            response += f"{i+1}. User: {log.get('User ID')}\n"
+            response += f"   Time: {log.get('Timestamp')}\n"
             response += f"   Text: {text_preview}\n"
             
             if log.get('URL'):

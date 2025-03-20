@@ -430,38 +430,75 @@ def save_telegram_message_to_sheet(user_id, text, url=None):
             # Wait for the spreadsheet to be fully created
             time.sleep(1)
         
-        # Get the next empty row
+        # Get the current data (we need to move everything down by one row)
         result = sheets_service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
-            range='Messages!A:A'
+            range='Messages!A:D'
         ).execute()
         
         values = result.get('values', [])
-        next_row = len(values) + 1
         
-        # Add the new row
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        range_name = f'Messages!A{next_row}'
-        
-        # Limit text size to avoid errors (maximum 10000 characters)
-        text_to_add = text
-        if len(text_to_add) > 10000:
-            text_to_add = text_to_add[:9997] + "..."
+        if len(values) <= 1:
+            # If sheet is empty or only has headers, just add to row 2
+            next_row = 2
+        else:
+            # We need to shift all existing data down by one row to insert at the top
+            # First, let's prepare our new row to insert
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-        body = {
-            'values': [
-                [timestamp, str(user_id), text_to_add, url or '']
-            ]
-        }
+            # Limit text size to avoid errors (maximum 10000 characters)
+            text_to_add = text
+            if len(text_to_add) > 10000:
+                text_to_add = text_to_add[:9997] + "..."
+                
+            new_row = [timestamp, str(user_id), text_to_add, url or '']
+            
+            # Create an updated array with our new row at position 1 (right after headers)
+            updated_values = [values[0]]  # Keep the header row
+            updated_values.append(new_row)  # Add the new row as second row
+            
+            # Append all existing data (excluding header)
+            if len(values) > 1:
+                updated_values.extend(values[1:])
+            
+            # Update the entire sheet with our reordered data
+            sheets_service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range='Messages!A1',
+                valueInputOption='RAW',
+                body={'values': updated_values}
+            ).execute()
+            
+            logger.info(f"Added new message record at row 2 (after header)")
+            
+            # Skip the regular append since we've already updated the sheet
+            next_row = None
         
-        sheets_service.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range=range_name,
-            valueInputOption='RAW',
-            body=body
-        ).execute()
-        
-        logger.info(f"Added new message record in row {next_row}")
+        # If we didn't do a full sheet update above, append normally
+        if next_row:
+            # Add the new row
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            range_name = f'Messages!A{next_row}'
+            
+            # Limit text size to avoid errors (maximum 10000 characters)
+            text_to_add = text
+            if len(text_to_add) > 10000:
+                text_to_add = text_to_add[:9997] + "..."
+                
+            body = {
+                'values': [
+                    [timestamp, str(user_id), text_to_add, url or '']
+                ]
+            }
+            
+            sheets_service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+            
+            logger.info(f"Added new message record in row {next_row}")
         
         # Always ensure the sheet is accessible after creating or updating
         ensure_results = ensure_sheet_accessible(spreadsheet_id)
@@ -541,7 +578,8 @@ def get_telegram_messages(limit=50, user_id=None):
         header = values[0]
         records = []
         
-        # Skip header row and process records
+        # Skip header row and process records - since newest are at the top, we start
+        # from row 1 (right after header) and go down up to the limit
         for i, row in enumerate(values[1:limit+1]):
             # Pad row with empty strings if needed
             padded_row = row + [''] * (len(header) - len(row))
@@ -549,7 +587,7 @@ def get_telegram_messages(limit=50, user_id=None):
             record = dict(zip(header, padded_row))
             
             # Filter by user_id if specified
-            if user_id and record.get('Telegram ID') != str(user_id):
+            if user_id and record.get('User ID') != str(user_id):
                 continue
                 
             records.append(record)

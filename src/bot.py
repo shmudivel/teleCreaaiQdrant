@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler, ConversationHandler
 import os
 from dotenv import load_dotenv
@@ -47,14 +47,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Show main menu with buttons
     await show_main_menu(update, context)
     
-    # Log command usage
-    if hasattr(update, 'message') and update.message:
-        user_id = update.effective_user.id
-        asyncio.create_task(log_message_to_sheet(user_id, "/start (command)", ""))
-    elif hasattr(update, 'callback_query') and update.callback_query:
-        user_id = update.callback_query.from_user.id
-        asyncio.create_task(log_message_to_sheet(user_id, "Back to menu (button)", ""))
-    
     return ConversationHandler.END
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -71,18 +63,13 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if hasattr(update, 'message') and update.message:
         # Direct message - send new message
         await update.message.reply_text(message_text, reply_markup=reply_markup)
-        user_id = update.effective_user.id
     elif hasattr(update, 'callback_query') and update.callback_query:
         # Callback query - edit existing message
         await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup)
-        user_id = update.callback_query.from_user.id
     else:
         # Fallback for other update types
         logger.warning("Unknown update type in show_main_menu")
         return
-    
-    # Log bot response
-    asyncio.create_task(log_message_to_sheet(user_id, "[BOT] Main menu displayed", ""))
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /help is issued."""
@@ -99,10 +86,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/logs [число] - Показать последние записи из логов\n'
         '/sheet - Получить ссылку на Google Sheet с логами'
     )
-    
-    # Log command usage
-    user_id = update.effective_user.id
-    asyncio.create_task(log_message_to_sheet(user_id, "/help (command)", ""))
     
     return ConversationHandler.END
 
@@ -122,26 +105,15 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
             context.user_data['flow'] = 'text_post'
             context.user_data['messages'] = []
             
-            # Log button click
-            asyncio.create_task(log_message_to_sheet(
-                user_id, 
-                "[SELECTION] Создать текстовый пост", 
-                ""
-            ))
-            
             return WAITING_FOR_URL
             
         elif selection == "menu_update_sheet":
             # Update Google Sheet flow
-            await query.edit_message_text("Пожалуйста, отправьте ссылку, которую нужно добавить в таблицу 🔗")
+            await query.edit_message_text(
+                "Для обновления Google Sheet необходимо предоставить URL и транскрипцию.\n\n"
+                "Пожалуйста, отправьте ссылку, которую нужно добавить в таблицу 🔗"
+            )
             context.user_data['flow'] = 'update_sheet'
-            
-            # Log button click
-            asyncio.create_task(log_message_to_sheet(
-                user_id, 
-                "[SELECTION] Обновить Google Sheet", 
-                ""
-            ))
             
             return WAITING_FOR_URL
             
@@ -154,9 +126,6 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle URL input based on the selected flow."""
     user_id = update.effective_user.id
     text = update.message.text
-    
-    # Log received URL
-    asyncio.create_task(log_message_to_sheet(user_id, f"[URL] {text}", text))
     
     if context.user_data.get('flow') == 'text_post':
         # Text post flow - validate Google Doc URL
@@ -197,6 +166,20 @@ async def handle_transcription_input(update: Update, context: ContextTypes.DEFAU
     """Handle when the user sends a message to transcribe."""
     user_id = update.effective_user.id
     message_text = update.message.text
+    url = context.user_data.get('url', '')
+    
+    # Validate that both URL and transcription are provided
+    if not url:
+        await update.message.reply_text(
+            "❌ Отсутствует URL. Пожалуйста, начните процесс обновления Google Sheet заново, используя соответствующий пункт меню."
+        )
+        return ConversationHandler.END
+        
+    if not message_text:
+        await update.message.reply_text(
+            "❌ Отсутствует транскрипция. Пожалуйста, отправьте текст транскрипции."
+        )
+        return WAITING_FOR_TRANSCRIPTION
     
     # Log the received transcription
     logger.info(f"Received transcription from user {user_id}: {message_text[:30]}...")
@@ -209,46 +192,19 @@ async def handle_transcription_input(update: Update, context: ContextTypes.DEFAU
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None, 
-            lambda: save_telegram_message_to_sheet(user_id, message_text)
+            lambda: save_telegram_message_to_sheet(user_id, message_text, url)
         )
         
         if result.get('success'):
             # Get links information
             sheet_url = result.get('sheet_url', '')
-            edit_link = result.get('edit_link', sheet_url)
-            view_link = result.get('view_link', sheet_url)
-            spreadsheet_id = result.get('spreadsheet_id', '')
-            is_new_sheet = result.get('is_new_sheet', False)
             
-            # Create success message
+            # Create success message - simplified version
             success_message = "✅ Запись успешно добавлена в Google Sheet!\n\n"
             
-            if is_new_sheet:
-                success_message += "🆕 Была создана новая таблица, так как прежняя не найдена.\n\n"
-            
-            success_message += f"📊 Таблица доступна по адресу (для shmudivel@gmail.com):\n{sheet_url}\n\n"
-            
-            # Add sharing links if available
-            if edit_link and edit_link != sheet_url:
-                success_message += f"📝 Публичная ссылка (редактирование):\n{edit_link}\n\n"
-            
-            if view_link and view_link != sheet_url and view_link != edit_link:
-                success_message += f"👁 Публичная ссылка (просмотр):\n{view_link}\n\n"
-            
-            success_message += f"🆔 ID таблицы: {spreadsheet_id}\n\n"
-            
-            # Add access instructions
-            success_message += "ℹ️ Инструкции по доступу:\n"
-            success_message += "1. Таблица должна быть доступна для shmudivel@gmail.com\n"
-            success_message += "2. Если вы видите сообщение 'You need access':\n"
-            success_message += "   • Убедитесь, что вы вошли в аккаунт shmudivel@gmail.com\n"
-            success_message += "   • Выйдите из других аккаунтов Google или используйте режим инкогнито\n"
-            success_message += "   • Обновите страницу или попробуйте открыть ссылку в новом окне\n"
-            
-            # Add buttons
+            # Add buttons for the next action
             keyboard = [
-                [InlineKeyboardButton("🔗 Открыть таблицу", url=sheet_url)],
-                [InlineKeyboardButton("📊 Подробная информация", callback_data="refresh_sheet_access")],
+                [InlineKeyboardButton("➕ Добавить еще запись", callback_data="add_another_record")],
                 [InlineKeyboardButton("🏠 Вернуться в меню", callback_data="menu_back")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -269,12 +225,20 @@ async def handle_transcription_input(update: Update, context: ContextTypes.DEFAU
             "Пожалуйста, попробуйте еще раз или обратитесь к администратору."
         )
     
-    # Return to the transcription state in case user wants to add more
-    return WAITING_FOR_TRANSCRIPTION
+    # Return to the main conversation handler
+    return ConversationHandler.END
 
 async def add_structured_record_to_sheet(user_id, url, transcription, context):
     """Add a structured record to the Google Sheet with metadata."""
     try:
+        # Validate input parameters
+        if not url or not transcription:
+            logger.warning(f"Failed to add record: Missing URL or transcription from user {user_id}")
+            return {
+                'success': False, 
+                'error': 'Missing required URL or transcription for Google Sheet update'
+            }
+            
         from datetime import datetime
         
         # Create a structured message with metadata
@@ -327,7 +291,7 @@ async def show_text_post_platforms(update: Update, context: ContextTypes.DEFAULT
     
     # Log platform selection request
     user_id = update.effective_user.id
-    asyncio.create_task(log_message_to_sheet(user_id, "[BOT] Text platform selection request", ""))
+    asyncio.create_task(log_message_to_sheet(user_id, "[BOT] Text platform selection request", "", True))
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel conversation and return to start."""
@@ -339,12 +303,50 @@ async def handle_back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     
     try:
-        await query.answer()
-        await show_main_menu(query, context)
+        # Make sure to answer the callback query
+        await query.answer("Возвращаемся в главное меню")
+        
+        user_id = update.effective_user.id
+        logger.info(f"User {user_id} clicked 'Back to menu' button with callback_data: {query.data}")
+        
+        # Reset user data
+        context.user_data.clear()
+        
+        # Edit the current message to remove buttons
+        try:
+            await query.edit_message_text(
+                text="Возвращаемся в главное меню...",
+                reply_markup=None
+            )
+            logger.info(f"Successfully edited message for user {user_id}")
+        except Exception as edit_error:
+            logger.error(f"Error editing message: {str(edit_error)}")
+        
+        # Create inline keyboard for main menu
+        keyboard = [
+            [InlineKeyboardButton("Создать текстовый пост 📝", callback_data="menu_text_post")],
+            [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Send new message with main menu options
+        try:
+            await query.message.reply_text(
+                "Выберите действие:",
+                reply_markup=reply_markup
+            )
+            logger.info(f"Successfully sent main menu to user {user_id}")
+        except Exception as reply_error:
+            logger.error(f"Error sending main menu: {str(reply_error)}")
+            await query.message.reply_text("Используйте /start для возврата в главное меню.")
+        
         return ConversationHandler.END
     except Exception as e:
         logger.error(f"Error returning to menu: {str(e)}")
-        await query.message.reply_text("Используйте /start для возврата в главное меню.")
+        try:
+            await query.message.reply_text("Используйте /start для возврата в главное меню.")
+        except:
+            logger.error("Failed to send fallback message")
         return ConversationHandler.END
 
 async def handle_platform_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -376,7 +378,7 @@ async def handle_platform_selection(update: Update, context: ContextTypes.DEFAUL
         asyncio.create_task(log_message_to_sheet(
             user_id, 
             f"[SELECTION] Selected platform: {platform_name}", 
-            ""
+            "", True
         ))
         
         try:
@@ -483,14 +485,19 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
                 asyncio.create_task(log_message_to_sheet(
                     user_id,
                     f"[ERROR] {error_msg}",
-                    ""
+                    "", True
                 ))
     except Exception as e:
         logger.error(f"Error in error handler while sending message: {str(e)}")
 
-async def log_message_to_sheet(user_id, text, url=None):
+async def log_message_to_sheet(user_id, text, url=None, user_consent=False):
     """Log message to Google Sheets without blocking the bot."""
     try:
+        # Only proceed if user explicitly gave consent or this is a system log
+        if not user_consent and not text.startswith("[BOT]") and not text.endswith("(command)"):
+            logger.info(f"Skipping Google Sheet logging for user {user_id} - no explicit consent given")
+            return {'success': False, 'error': 'User did not explicitly consent to Google Sheet update'}
+            
         # Run in executor to prevent blocking
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -530,7 +537,7 @@ async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(retrieve_and_send_logs(update, limit))
     
     # Log command usage
-    asyncio.create_task(log_message_to_sheet(user_id, f"/logs {limit} (command)", ""))
+    asyncio.create_task(log_message_to_sheet(user_id, f"/logs {limit} (command)", "", True))
 
 async def retrieve_and_send_logs(update, limit):
     """Retrieve logs and send them to the chat."""
@@ -594,7 +601,7 @@ async def sheet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(retrieve_and_send_sheet_url(update, fix_access=True))
     
     # Log command usage
-    asyncio.create_task(log_message_to_sheet(user_id, "/sheet (command)", ""))
+    asyncio.create_task(log_message_to_sheet(user_id, "/sheet (command)", "", True))
 
 async def retrieve_and_send_sheet_url(update, fix_access=False):
     """Retrieve the spreadsheet URL and send it to the chat."""
@@ -727,32 +734,23 @@ async def retrieve_and_send_sheet_url(update, fix_access=False):
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show the main menu when the user sends /menu command."""
     keyboard = [
-        [KeyboardButton("✏️ Обновить Google Sheet")],
-        [KeyboardButton("🔍 Поиск в сообщениях")],
-        [KeyboardButton("📊 Получить ссылку на таблицу")],
-        [KeyboardButton("ℹ️ Помощь")]
+        [InlineKeyboardButton("Создать текстовый пост 📝", callback_data="menu_text_post")],
+        [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")],
+        [InlineKeyboardButton("Посмотреть логи 🔍", callback_data="menu_logs")],
+        [InlineKeyboardButton("Получить ссылку на таблицу 📊", callback_data="menu_sheet")]
     ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
         "Главное меню бота:",
         reply_markup=reply_markup
     )
-    
-    # Log command usage
-    user_id = update.effective_user.id
-    asyncio.create_task(log_message_to_sheet(user_id, "/menu (command)", ""))
 
 async def handle_unknown_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle unexpected or unknown inputs during conversations."""
     await update.message.reply_text(
         "Извините, я не понимаю этот ввод. Пожалуйста, следуйте инструкциям или используйте /menu для возврата в главное меню."
     )
-    
-    # Log unexpected input
-    user_id = update.effective_user.id
-    text = update.message.text if hasattr(update.message, 'text') else "[Non-text input]"
-    asyncio.create_task(log_message_to_sheet(user_id, f"[UNEXPECTED INPUT] {text}", ""))
     
     # Don't end the conversation, let the user try again
     return
@@ -799,47 +797,70 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     data = query.data
     
-    if data == "menu_back":
-        # Return to the main menu
-        keyboard = [
-            [KeyboardButton("✏️ Обновить Google Sheet")],
-            [KeyboardButton("🔍 Поиск в сообщениях")],
-            [KeyboardButton("📊 Получить ссылку на таблицу")],
-            [KeyboardButton("ℹ️ Помощь")]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    if data == "add_another_record":
+        # Set the flow to update sheet again
+        context.user_data['flow'] = 'update_sheet'
         
+        # Edit the message to ask for URL
         await query.edit_message_text(
-            text=f"Выберите действие из меню:",
+            text="Пожалуйста, отправьте ссылку, которую нужно добавить в таблицу 🔗",
             reply_markup=None
         )
         
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="Вы вернулись в главное меню:",
-            reply_markup=reply_markup
-        )
-    
-    # Add other menu callback handlers as needed
+        # Return to the URL input state
+        return WAITING_FOR_URL
 
 async def unknown_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle unknown text messages."""
-    message = "🤔 Я не понимаю это сообщение. Пожалуйста, воспользуйтесь меню или командами."
     
-    # Suggest returning to the menu
-    keyboard = [
-        [KeyboardButton("✏️ Обновить Google Sheet")],
-        [KeyboardButton("🔍 Поиск в сообщениях")],
-        [KeyboardButton("📊 Получить ссылку на таблицу")],
-        [KeyboardButton("ℹ️ Помощь")]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    # Default message for unrecognized input
+    message = "🤔 Я не понимаю это сообщение. Пожалуйста, воспользуйтесь командами:\n\n/start - Начать работу с ботом\n/menu - Показать главное меню\n/help - Показать справку"
     
-    await update.message.reply_text(message, reply_markup=reply_markup)
+    # Suggest using the /menu command
+    await update.message.reply_text(message)
     
-    # Log the unknown message
-    user_id = update.effective_user.id
-    asyncio.create_task(log_message_to_sheet(user_id, "Неизвестное сообщение", update.message.text))
+    return ConversationHandler.END
+
+async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle callbacks from the main menu buttons."""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    
+    if data == "menu_logs":
+        # Edit message to acknowledge selection
+        await query.edit_message_text("Получение логов...")
+        
+        # Create a fake update to pass to logs_command
+        class FakeUpdate:
+            def __init__(self, effective_user, message=None):
+                self.effective_user = effective_user
+                self.message = message
+                
+        fake_update = FakeUpdate(query.from_user, message=query.message)
+        fake_update.message.reply_text = query.message.reply_text
+        
+        # Call logs command
+        await logs_command(fake_update, context)
+        return ConversationHandler.END
+        
+    elif data == "menu_sheet":
+        # Edit message to acknowledge selection
+        await query.edit_message_text("Получение информации о таблице...")
+        
+        # Create a fake update to pass to sheet_command
+        class FakeUpdate:
+            def __init__(self, effective_user, message=None):
+                self.effective_user = effective_user
+                self.message = message
+                
+        fake_update = FakeUpdate(query.from_user, message=query.message)
+        fake_update.message.reply_text = query.message.reply_text
+        
+        # Call sheet command
+        await sheet_command(fake_update, context)
+        return ConversationHandler.END
 
 def main():
     """Start the bot."""
@@ -853,7 +874,8 @@ def main():
         entry_points=[
             CommandHandler("start", start),
             CommandHandler("menu", menu_command),
-            CallbackQueryHandler(handle_menu_selection, pattern="^menu_")
+            CallbackQueryHandler(handle_menu_selection, pattern="^menu_"),
+            CallbackQueryHandler(menu_callback, pattern="^add_another_record$")
         ],
         states={
             WAITING_FOR_URL: [
@@ -875,7 +897,7 @@ def main():
             CommandHandler("start", start),
             CommandHandler("help", help_command),
             CallbackQueryHandler(handle_back_to_menu, pattern="^menu_back$"),
-            MessageHandler(filters.ALL, handle_unknown_input)
+            MessageHandler(filters.ALL, unknown_text)
         ],
         name="main_conversation",
         persistent=False,
@@ -892,11 +914,13 @@ def main():
     # Add conversation handler
     application.add_handler(conv_handler)
     
-    # Add callback handlers
-    application.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu_"))
+    # Add callback handlers - note that these won't be reached if the conversation handler
+    # is active, as it has higher priority
+    application.add_handler(CallbackQueryHandler(handle_menu_callback, pattern="^menu_logs$|^menu_sheet$"))
+    application.add_handler(CallbackQueryHandler(menu_callback, pattern="^add_another_record$"))
     application.add_handler(CallbackQueryHandler(refresh_sheet_access_callback, pattern="^refresh_sheet_access$"))
     
-    # Add fallback handler for unknown messages
+    # Add fallback handler for messages outside conversations
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text))
     
     # Register the error handler

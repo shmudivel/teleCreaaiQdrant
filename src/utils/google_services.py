@@ -294,6 +294,23 @@ def save_telegram_message_to_sheet(user_id, text, url=None):
         Dictionary with success status, spreadsheet_id and sheet_url if successful
     """
     try:
+        # Validate that for non-system messages, both URL and text are provided
+        if not text:
+            logger.warning(f"Missing text content for Google Sheet update from user {user_id}")
+            return {
+                'success': False,
+                'error': 'Missing required text content for Google Sheet update'
+            }
+            
+        # For non-system messages (those not starting with [BOT] or ending with (command)),
+        # URL should be provided
+        if not url and not text.startswith("[BOT]") and not text.startswith("[ERROR]") and not text.endswith("(command)"):
+            logger.warning(f"Missing URL for Google Sheet update from user {user_id}")
+            return {
+                'success': False,
+                'error': 'Missing required URL for Google Sheet update'
+            }
+        
         credentials = service_account.Credentials.from_service_account_file(
             './bustling-folio-439811-h8-539f8ab05fa7.json',
             scopes=[

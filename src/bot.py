@@ -28,8 +28,9 @@ logger = logging.getLogger(__name__)
 (
     WAITING_FOR_URL, 
     WAITING_FOR_TRANSCRIPTION,
-    WAITING_FOR_PLATFORM_SELECTION
-) = range(3)
+    WAITING_FOR_PLATFORM_SELECTION,
+    WAITING_FOR_VECTOR_DB_QUERY
+) = range(4)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
@@ -53,7 +54,8 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Display the main menu with available options."""
     keyboard = [
         [InlineKeyboardButton("Создать текстовый пост 📝", callback_data="menu_text_post")],
-        [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")]
+        [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")],
+        [InlineKeyboardButton("Задать вопрос Сергею 🗣️", callback_data="menu_vector_db")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -81,7 +83,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/help - Показать эту справку\n\n'
         'В главном меню доступны следующие опции:\n'
         '• Создать текстовый пост - создать пост для выбранной соцсети (Дзен, VC.ru)\n'
-        '• Обновить Google Sheet - добавить запись в таблицу сообщений\n\n'
+        '• Обновить Google Sheet - добавить запись в таблицу сообщений\n'
+        '• Задать вопрос Сергею - получить ответ напрямую от Сергея Черненко на основе его знаний\n\n'
         'Для админов доступны дополнительные команды:\n'
         '/logs [число] - Показать последние записи из логов\n'
         '/sheet - Получить ссылку на Google Sheet с логами'
@@ -116,6 +119,16 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
             context.user_data['flow'] = 'update_sheet'
             
             return WAITING_FOR_URL
+        
+        elif selection == "menu_vector_db":
+            # Vector DB query flow
+            await query.edit_message_text(
+                "Задайте вопрос Сергею Черненко, и он лично ответит вам 🗣️\n\n"
+                "Что бы вы хотели узнать у Сергея? Спросите о карьере, развитии в найме, коммуникации с руководством - и Сергей поделится своим опытом."
+            )
+            context.user_data['flow'] = 'vector_db_query'
+            
+            return WAITING_FOR_VECTOR_DB_QUERY
             
     except Exception as e:
         logger.error(f"Error handling menu selection: {str(e)}")
@@ -325,7 +338,8 @@ async def handle_back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Create inline keyboard for main menu
         keyboard = [
             [InlineKeyboardButton("Создать текстовый пост 📝", callback_data="menu_text_post")],
-            [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")]
+            [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")],
+            [InlineKeyboardButton("Задать вопрос Сергею 🗣️", callback_data="menu_vector_db")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -736,6 +750,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Создать текстовый пост 📝", callback_data="menu_text_post")],
         [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")],
+        [InlineKeyboardButton("Задать вопрос Сергею 🗣️", callback_data="menu_vector_db")],
         [InlineKeyboardButton("Посмотреть логи 🔍", callback_data="menu_logs")],
         [InlineKeyboardButton("Получить ссылку на таблицу 📊", callback_data="menu_sheet")]
     ]
@@ -862,6 +877,103 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await sheet_command(fake_update, context)
         return ConversationHandler.END
 
+async def handle_vector_db_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle when the user sends a query for Sergey to answer."""
+    user_id = update.effective_user.id
+    query_text = update.message.text
+    
+    # Enhanced validation of the query
+    if not query_text or query_text.strip() == '':
+        await update.message.reply_text(
+            "❌ Пожалуйста, задайте конкретный вопрос Сергею. Пустой запрос не может быть обработан."
+        )
+        return WAITING_FOR_VECTOR_DB_QUERY
+    
+    # Enforce minimum query length
+    if len(query_text.strip()) < 5:
+        await update.message.reply_text(
+            "❌ Пожалуйста, сформулируйте более развернутый вопрос Сергею, чтобы он мог дать точный ответ."
+        )
+        return WAITING_FOR_VECTOR_DB_QUERY
+    
+    # Log the received query with more context
+    logger.info(f"Received question for Sergey from user {user_id}: '{query_text}'")
+    
+    # Send processing message
+    processing_message = await update.message.reply_text("⏳ Сергей обдумывает ваш вопрос...")
+    
+    try:
+        # Create a crew for processing the vector database query
+        from crewai import Crew
+        from src.platforms.factory import PlatformFactory
+        
+        # Get vector db platform components
+        vector_db_agents = PlatformFactory.get_platform_agents("vector_db")
+        vector_db_tasks = PlatformFactory.get_platform_tasks("vector_db")
+        
+        # Create the agents with detailed logging
+        logger.info("Creating researcher agent")
+        researcher = vector_db_agents.researcher_agent()
+        logger.info("Creating writer agent")
+        writer = vector_db_agents.writer_agent()
+        logger.info("Creating fact-checker agent")
+        fact_checker = vector_db_agents.fact_checker_agent()
+        
+        # Create the tasks with explicit query passing
+        logger.info(f"Creating research task with query: '{query_text}'")
+        research_task = vector_db_tasks.research_task(researcher, query_text)
+        logger.info("Creating writing task")
+        writing_task = vector_db_tasks.writing_task(writer, "{research_results}", query_text)
+        logger.info("Creating fact-checking task")
+        fact_checking_task = vector_db_tasks.fact_checking_task(fact_checker, "{draft_response}", query_text)
+        
+        # Create the crew with sequential process
+        logger.info("Initializing CrewAI crew with sequential process")
+        crew = Crew(
+            agents=[researcher, writer, fact_checker],
+            tasks=[research_task, writing_task, fact_checking_task],
+            verbose=True
+        )
+        
+        # Execute the crew process to get the answer
+        logger.info("Starting CrewAI process")
+        result = crew.kickoff()
+        logger.info(f"CrewAI process completed, result length: {len(result) if result else 0}")
+        
+        # Update the processing message with the result
+        await processing_message.edit_text(f"{result}")
+        
+        # Show back to menu button
+        keyboard = [[InlineKeyboardButton("Вернуться в меню", callback_data="back_to_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Что хотите сделать дальше?", reply_markup=reply_markup)
+        
+        return ConversationHandler.END
+        
+    except Exception as e:
+        logger.error(f"Error processing vector DB query: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Provide more specific error message based on the exception type
+        error_message = "❌ Произошла ошибка при обработке запроса"
+        
+        if "all messages must have non-empty content" in str(e):
+            error_message += ": Получен пустой ответ от инструмента. Пожалуйста, попробуйте задать более конкретный вопрос."
+        elif "field required" in str(e).lower():
+            error_message += ": Ошибка в формате запроса. Мы работаем над исправлением проблемы."
+        else:
+            error_message += f": {str(e)}"
+        
+        # Send error message to the user
+        await processing_message.edit_text(error_message)
+        
+        # Still show back to menu button
+        keyboard = [[InlineKeyboardButton("Вернуться в меню", callback_data="back_to_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Хотите вернуться в меню?", reply_markup=reply_markup)
+        
+        return ConversationHandler.END
+
 def main():
     """Start the bot."""
     logger.info("Starting bot...")
@@ -886,6 +998,9 @@ def main():
             ],
             WAITING_FOR_PLATFORM_SELECTION: [
                 CallbackQueryHandler(handle_platform_selection, pattern="^platform_")
+            ],
+            WAITING_FOR_VECTOR_DB_QUERY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_vector_db_query)
             ],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, handle_unknown_input)

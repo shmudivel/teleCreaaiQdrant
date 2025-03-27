@@ -3,6 +3,8 @@ from .dzen import agents as dzen_agents
 from .dzen import tasks as dzen_tasks
 from .vc import agents as vc_agents
 from .vc import tasks as vc_tasks
+from .vector_db import agents as vector_db_agents
+from .vector_db import tasks as vector_db_tasks
 
 class PlatformFactory:
     """Factory for creating platform-specific agents and tasks."""
@@ -17,6 +19,11 @@ class PlatformFactory:
             "agents": vc_agents.VCAgents,
             "tasks": vc_tasks.VCTasks,
             "display_name": "vc.ru"
+        },
+        "vector_db": {
+            "agents": vector_db_agents.VectorDBAgents,
+            "tasks": vector_db_tasks.VectorDBTasks,
+            "display_name": "Векторная база данных"
         }
     }
     

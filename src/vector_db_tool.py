@@ -14,6 +14,8 @@ import logging
 from typing import Any, Optional
 from pydantic import Field
 import traceback
+import json
+import inspect
 
 # Load environment variables
 load_dotenv()
@@ -34,11 +36,98 @@ class VectorDBQueryTool(CrewaiBaseTool):
     # Properly define toolset as a field
     vector_db: Any = Field(description="Vector database instance")
     
-    def _run(self, query: str) -> str:
+    # Define the schema to accept either 'query' or 'description'
+    def schema(self) -> dict:
+        base_schema = super().schema()
+        base_schema["properties"] = {
+            "query": {"type": "string", "description": "The query to search for"},
+            "description": {"type": "string", "description": "Alternative field for query"}
+        }
+        base_schema["required"] = ["query"]  # Make query field required
+        return base_schema
+    
+    def _run(self, **kwargs) -> str:
         """Run the tool with the given query."""
-        logger.info(f"Running vector_db_query tool with query: {query[:50]}...")
+        # Extract query from either 'query' or 'description' field
+        logger.info(f"Vector DB Query Tool received kwargs: {kwargs}")
+        
+        # Handle case when the input is an empty dict
+        if not kwargs:
+            logger.warning("Received empty kwargs dict, returning fallback response")
+            return "No query provided. Please provide a specific question or topic to search for."
+        
+        # For CrewAI tools, the input might be in the first unnamed parameter
+        if len(kwargs) == 0 and len(self._run.__code__.co_varnames) > 1:
+            # Try to get the first argument value
+            frame = inspect.currentframe()
+            try:
+                if frame and frame.f_back:
+                    arg_values = inspect.getargvalues(frame.f_back)
+                    if 'args' in arg_values.locals and arg_values.locals['args']:
+                        # Handle the case where the first argument might be the query
+                        first_arg = arg_values.locals['args'][1] if len(arg_values.locals['args']) > 1 else None
+                        if first_arg:
+                            logger.info(f"Found query in first argument: {first_arg}")
+                            return self._process_query(first_arg)
+            finally:
+                del frame  # Avoid reference cycles
+        
+        query = kwargs.get('query') or kwargs.get('description', '')
+        return self._process_query(query)
+        
+    def _process_query(self, query):
+        """Process the query string or object."""
+        # Log the original query format for debugging
+        logger.info(f"Original query format: {type(query)}, value: {query}")
+        
+        # Handle empty string or None input
+        if not query:
+            logger.warning("Received empty query, returning fallback response")
+            return "No query provided. Please provide a specific question or topic to search for."
+            
+        # Handle case when input is a JSON string rather than a parsed object
+        if isinstance(query, str) and (query.startswith('{') and query.endswith('}')):
+            try:
+                parsed_json = json.loads(query)
+                logger.info(f"Parsed JSON string to dict: {parsed_json}")
+                
+                # Handle empty JSON object case
+                if not parsed_json:
+                    logger.warning("Received empty JSON object, returning fallback response")
+                    return "No query provided. Please provide a specific question or topic to search for."
+                    
+                if isinstance(parsed_json, dict):
+                    if 'query' in parsed_json:
+                        query = parsed_json['query']
+                        logger.info(f"Extracted query from JSON string: {query[:50] if query else 'empty'}")
+                    elif 'description' in parsed_json:
+                        query = parsed_json['description']
+                        logger.info(f"Extracted description from JSON string: {query[:50] if query else 'empty'}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse query as JSON: {e}")
+        
+        # Continue with existing logic
+        if isinstance(query, dict) and 'description' in query:
+            query = query['description']
+            logger.info(f"Extracted query from description field in dict: {query[:50] if query else 'empty'}")
+        elif isinstance(query, dict) and 'query' in query:
+            query = query['query']
+            logger.info(f"Extracted query from query field in dict: {query[:50] if query else 'empty'}")
+        elif isinstance(query, str):
+            logger.info(f"Query is a string: {query[:50] if query else 'empty'}")
+        else:
+            logger.warning(f"Unexpected query format: {type(query)}, value: {query}")
+            
+        logger.info(f"Final query after processing: {query[:100] if query else 'empty'}")
+        
+        # Prevent empty queries from being sent to the model
+        if not query or (isinstance(query, str) and query.strip() == ''):
+            logger.warning("Empty query received, returning fallback response")
+            return "No query provided. Please provide a specific question or topic to search for."
+        
         try:
             if self.vector_db.qa_chain:
+                logger.info(f"Running vector_db_query tool with final query: {query[:50]}...")
                 result = self.vector_db.qa_chain.run(query)
                 logger.info(f"Vector DB query succeeded, result length: {len(result)}")
                 return result
@@ -47,6 +136,11 @@ class VectorDBQueryTool(CrewaiBaseTool):
         except Exception as e:
             logger.error(f"Error in vector_db_query tool: {str(e)}")
             logger.error(traceback.format_exc())
+            
+            # Special handling for Anthropic API errors
+            if "all messages must have non-empty content" in str(e):
+                return "Error: Empty query detected. Please provide a specific question or topic to search for."
+            
             return f"Error querying vector database: {str(e)}"
 
 class SearchKnowledgeBaseTool(CrewaiBaseTool):
@@ -57,11 +151,98 @@ class SearchKnowledgeBaseTool(CrewaiBaseTool):
     # Properly define toolset as a field
     vector_db: Any = Field(description="Vector database instance")
     
-    def _run(self, query: str) -> str:
+    # Define the schema to accept either 'query' or 'description'
+    def schema(self) -> dict:
+        base_schema = super().schema()
+        base_schema["properties"] = {
+            "query": {"type": "string", "description": "The query to search for"},
+            "description": {"type": "string", "description": "Alternative field for query"}
+        }
+        base_schema["required"] = ["query"]  # Make query field required
+        return base_schema
+    
+    def _run(self, **kwargs) -> str:
         """Run the tool with the given query."""
-        logger.info(f"Running search_knowledge_base tool with query: {query[:50]}...")
+        # Extract query from either 'query' or 'description' field
+        logger.info(f"Search Knowledge Base Tool received kwargs: {kwargs}")
+        
+        # Handle case when the input is an empty dict
+        if not kwargs:
+            logger.warning("Received empty kwargs dict, returning fallback response")
+            return "No query provided. Please provide a specific question or topic to search for."
+        
+        # For CrewAI tools, the input might be in the first unnamed parameter
+        if len(kwargs) == 0 and len(self._run.__code__.co_varnames) > 1:
+            # Try to get the first argument value
+            frame = inspect.currentframe()
+            try:
+                if frame and frame.f_back:
+                    arg_values = inspect.getargvalues(frame.f_back)
+                    if 'args' in arg_values.locals and arg_values.locals['args']:
+                        # Handle the case where the first argument might be the query
+                        first_arg = arg_values.locals['args'][1] if len(arg_values.locals['args']) > 1 else None
+                        if first_arg:
+                            logger.info(f"Found query in first argument: {first_arg}")
+                            return self._process_query(first_arg)
+            finally:
+                del frame  # Avoid reference cycles
+        
+        query = kwargs.get('query') or kwargs.get('description', '')
+        return self._process_query(query)
+        
+    def _process_query(self, query):
+        """Process the query string or object."""
+        # Log the original query format for debugging
+        logger.info(f"Original query format: {type(query)}, value: {query}")
+        
+        # Handle empty string or None input
+        if not query:
+            logger.warning("Received empty query, returning fallback response")
+            return "No query provided. Please provide a specific question or topic to search for."
+            
+        # Handle case when input is a JSON string rather than a parsed object
+        if isinstance(query, str) and (query.startswith('{') and query.endswith('}')):
+            try:
+                parsed_json = json.loads(query)
+                logger.info(f"Parsed JSON string to dict: {parsed_json}")
+                
+                # Handle empty JSON object case
+                if not parsed_json:
+                    logger.warning("Received empty JSON object, returning fallback response")
+                    return "No query provided. Please provide a specific question or topic to search for."
+                    
+                if isinstance(parsed_json, dict):
+                    if 'query' in parsed_json:
+                        query = parsed_json['query']
+                        logger.info(f"Extracted query from JSON string: {query[:50] if query else 'empty'}")
+                    elif 'description' in parsed_json:
+                        query = parsed_json['description']
+                        logger.info(f"Extracted description from JSON string: {query[:50] if query else 'empty'}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse query as JSON: {e}")
+        
+        # Continue with existing logic
+        if isinstance(query, dict) and 'description' in query:
+            query = query['description']
+            logger.info(f"Extracted query from description field in dict: {query[:50] if query else 'empty'}")
+        elif isinstance(query, dict) and 'query' in query:
+            query = query['query']
+            logger.info(f"Extracted query from query field in dict: {query[:50] if query else 'empty'}")
+        elif isinstance(query, str):
+            logger.info(f"Query is a string: {query[:50] if query else 'empty'}")
+        else:
+            logger.warning(f"Unexpected query format: {type(query)}, value: {query}")
+            
+        logger.info(f"Final query after processing: {query[:100] if query else 'empty'}")
+        
+        # Prevent empty queries
+        if not query or (isinstance(query, str) and query.strip() == ''):
+            logger.warning("Empty query received, returning fallback response")
+            return "No query provided. Please provide a specific question or topic to search for."
+        
         try:
             result = self.vector_db.search_knowledge_base(query)
+            logger.info(f"Running search_knowledge_base tool with final query: {query[:50]}...")
             logger.info(f"Knowledge base search succeeded, result length: {len(result)}")
             return result
         except Exception as e:
@@ -171,11 +352,16 @@ class VectorDBToolset:
 
     def search_knowledge_base(self, query, limit=5):
         """Search the knowledge base for relevant information."""
-        logger.info(f"Direct search_knowledge_base called with: {query[:50]}...")
+        logger.info(f"Direct search_knowledge_base called with: {query[:50] if query and isinstance(query, str) else 'empty'}...")
         try:
             if not self.client or not self.vector_store:
                 logger.warning("Vector database is not available for search")
                 return "Vector database is not available."
+            
+            # Handle empty queries
+            if not query or (isinstance(query, str) and query.strip() == ''):
+                logger.warning("Empty query received in search_knowledge_base")
+                return "No query provided. Please provide a specific question or topic to search for."
             
             # For now, return a placeholder response
             # In a real implementation, you would:

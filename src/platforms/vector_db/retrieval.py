@@ -66,7 +66,7 @@ class QdrantRetriever:
             raise
     
     def extract_context(self, docs):
-        """Extract content from retrieved documents."""
+        """Extract content from retrieved documents and filter by relevance."""
         logger.info(f"Extracting context from {len(docs)} documents")
         
         context = []
@@ -76,16 +76,32 @@ class QdrantRetriever:
                 metadata_keys = list(doc.metadata.keys()) if hasattr(doc, 'metadata') else []
                 content_length = len(doc.page_content) if hasattr(doc, 'page_content') else 0
                 
-                logger.info(f"Document {i+1}: metadata keys: {metadata_keys}, content length: {content_length}")
+                # Calculate a simple relevance score using metadata if available
+                relevance_score = 1.0  # Default score
+                if hasattr(doc, 'metadata') and 'score' in doc.metadata:
+                    relevance_score = float(doc.metadata.get('score', 1.0))
+                    
+                logger.info(f"Document {i+1}: metadata keys: {metadata_keys}, content length: {content_length}, relevance: {relevance_score:.4f}")
                 
-                context.append({
+                # Filter out content with very low relevance
+                if relevance_score < 0.5:
+                    logger.info(f"Skipping document {i+1} due to low relevance score: {relevance_score:.4f}")
+                    continue
+                
+                context_item = {
                     "content": doc.page_content,
-                    "metadata": doc.metadata
-                })
+                    "metadata": doc.metadata,
+                    "relevance": relevance_score
+                }
+                
+                context.append(context_item)
             except Exception as e:
                 logger.error(f"Error extracting context from document {i+1}: {str(e)}")
         
-        logger.info(f"Extracted context from {len(context)} documents")
+        # Sort context by relevance score (highest first)
+        context.sort(key=lambda x: x.get('relevance', 0), reverse=True)
+        
+        logger.info(f"Extracted context from {len(context)} documents after relevance filtering")
         return context
     
     def get_context_for_query(self, query):
@@ -108,8 +124,11 @@ class QdrantRetriever:
         prompt = f"""
         Based on this user query: "{query}"
         
-        Generate 3-5 specific questions that would help retrieve relevant information 
-        from a knowledge base about Sergey Chernenko.
+        Generate 3-4 highly specific questions that would help retrieve the most relevant information 
+        from a knowledge base about Sergey Chernenko's views on this topic.
+        
+        Focus on questions that target different aspects of the topic to get diverse but relevant information.
+        Make questions very specific and targeted, not general.
         
         Format: Return just the questions, one per line.
         """

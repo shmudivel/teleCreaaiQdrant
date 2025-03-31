@@ -14,7 +14,7 @@ class VectorDBIntegration:
     generate high-quality responses in Sergey's style.
     """
     
-    def __init__(self, collection_name="context-main3", top_k=5, max_iterations=3, process_timeout=300):
+    def __init__(self, collection_name="context-main3", top_k=3, max_iterations=3, process_timeout=300):
         """Initialize the integration components."""
         logger.info(f"Initializing VectorDBIntegration with collection: {collection_name}, top_k: {top_k}, max_iterations: {max_iterations}")
         
@@ -60,8 +60,10 @@ class VectorDBIntegration:
         logger.info(f"Retrieved {len(original_context)} context items for original query")
         all_contexts.extend(original_context)
         
-        # Then get context for each related question
-        for i, question in enumerate(questions):
+        # Then get context for each related question - but limit to most relevant questions
+        # to avoid context overload
+        max_questions = 2  # Limit to just 2 additional questions
+        for i, question in enumerate(questions[:max_questions]):
             logger.info(f"Retrieving context for related question {i+1}: '{question}'")
             context = self.retriever.get_context_for_query(question)
             logger.info(f"Retrieved {len(context)} context items for related question {i+1}")
@@ -114,20 +116,48 @@ class VectorDBIntegration:
         # Deduplicate content by keeping track of seen contents
         seen_contents = set()
         
-        for i, ctx in enumerate(contexts):
+        # Track total context length to stay within limits
+        max_context_length = 3000  # Limit total context length to 3000 characters
+        current_length = len(formatted)
+        num_fragments = 0
+        
+        # Sort by relevance if available - ensure most relevant content comes first
+        sorted_contexts = sorted(contexts, key=lambda x: x.get('relevance', 0), reverse=True)
+        
+        for i, ctx in enumerate(sorted_contexts):
             content = ctx["content"]
+            relevance = ctx.get("relevance", "unknown")
             
             # Skip duplicate content
             if content in seen_contents:
                 continue
                 
+            # Truncate extremely long content entries
+            if len(content) > 500:
+                content = content[:500] + "... (truncated)"
+            
+            # Check if adding this content would exceed the maximum length
+            if current_length + len(content) + 50 > max_context_length:
+                # If we already have some context, skip adding more
+                if num_fragments > 0:
+                    logger.info(f"Reached context length limit ({current_length}/{max_context_length} chars). Stopping after {num_fragments} fragments.")
+                    break
+            
+            # Add the content to seen contents
             seen_contents.add(content)
             
-            # Add the formatted content
-            formatted += f"--- Фрагмент {i+1} ---\n"
+            # Format relevance value outside the f-string
+            relevance_str = f"{relevance:.2f}" if isinstance(relevance, float) else str(relevance)
+            
+            # Add the formatted content with relevance score if available
+            formatted += f"--- Фрагмент {num_fragments+1} (релевантность: {relevance_str}) ---\n"
             formatted += f"{content}\n\n"
+            
+            # Update the current length
+            current_length += len(content) + 70  # Add buffer for the formatting
+            num_fragments += 1
         
-        logger.info(f"Formatted context: {len(formatted)} characters, {len(seen_contents)} unique fragments")
+        logger.info(f"Formatted context: {current_length} characters, {num_fragments} unique fragments")
         return formatted
     
     def _create_research_task_with_context(self, query, context, agent):
@@ -136,9 +166,9 @@ class VectorDBIntegration:
         enhanced_query = f"""
 {query}
 
-ВАЖНО: У вас уже есть достаточно информации в предоставленном контексте ниже. 
-Используйте внешний поиск (exa_search) только если контекст не содержит необходимых сведений. 
-Ограничьтесь максимум 3 поисковыми запросами.
+ВАЖНО: Ниже предоставлен контекст из базы знаний Сергея Черненко. Это целевая информация, которая должна быть приоритетной для составления ответа.
+Используйте этот контекст как основной источник для ответа, и обращайтесь к внешнему поиску только если информации недостаточно.
+Ограничьтесь максимум 2 поисковыми запросами.
 
 {context}
 """

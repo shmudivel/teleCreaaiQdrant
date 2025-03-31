@@ -903,42 +903,32 @@ async def handle_vector_db_query(update: Update, context: ContextTypes.DEFAULT_T
     processing_message = await update.message.reply_text("⏳ Сергей обдумывает ваш вопрос...")
     
     try:
-        # Create a crew for processing the vector database query
-        from crewai import Crew
-        from src.platforms.factory import PlatformFactory
+        # Import the VectorDBIntegration
+        from src.platforms.vector_db import VectorDBIntegration
         
-        # Get vector db platform components
-        vector_db_agents = PlatformFactory.get_platform_agents("vector_db")
-        vector_db_tasks = PlatformFactory.get_platform_tasks("vector_db")
+        # Log the start of vector retrieval process
+        logger.info(f"Starting vector database retrieval and processing for query: '{query_text}'")
         
-        # Create the agents with detailed logging
-        logger.info("Creating researcher agent")
-        researcher = vector_db_agents.researcher_agent()
-        logger.info("Creating writer agent")
-        writer = vector_db_agents.writer_agent()
-        logger.info("Creating fact-checker agent")
-        fact_checker = vector_db_agents.fact_checker_agent()
-        
-        # Create the tasks with explicit query passing
-        logger.info(f"Creating research task with query: '{query_text}'")
-        research_task = vector_db_tasks.research_task(researcher, query_text)
-        logger.info("Creating writing task")
-        writing_task = vector_db_tasks.writing_task(writer, "{research_results}", query_text)
-        logger.info("Creating fact-checking task")
-        fact_checking_task = vector_db_tasks.fact_checking_task(fact_checker, "{draft_response}", query_text)
-        
-        # Create the crew with sequential process
-        logger.info("Initializing CrewAI crew with sequential process")
-        crew = Crew(
-            agents=[researcher, writer, fact_checker],
-            tasks=[research_task, writing_task, fact_checking_task],
-            verbose=True
+        # Create integration instance
+        integration = VectorDBIntegration(
+            collection_name="context-main3", 
+            top_k=5,
+            max_iterations=3,
+            process_timeout=180  # 3 minutes timeout
         )
         
-        # Execute the crew process to get the answer
-        logger.info("Starting CrewAI process")
-        result = crew.kickoff()
-        logger.info(f"CrewAI process completed, result length: {len(result) if result else 0}")
+        # Process the query with integrated vector retrieval and agent processing
+        logger.info("Processing query with VectorDBIntegration")
+        result = integration.process_query(query_text)
+        
+        # Ensure result is a string
+        if result is None:
+            result = "Извините, не удалось сформировать ответ. Пожалуйста, задайте вопрос по-другому."
+            logger.warning("Received None result from VectorDBIntegration")
+        else:
+            result_text = str(result)
+            logger.info(f"Vector retrieval and agent processing completed, result length: {len(result_text)}")
+            result = result_text
         
         # Update the processing message with the result
         await processing_message.edit_text(f"{result}")
@@ -961,6 +951,8 @@ async def handle_vector_db_query(update: Update, context: ContextTypes.DEFAULT_T
             error_message += ": Получен пустой ответ от инструмента. Пожалуйста, попробуйте задать более конкретный вопрос."
         elif "field required" in str(e).lower():
             error_message += ": Ошибка в формате запроса. Мы работаем над исправлением проблемы."
+        elif "CrewOutput" in str(e):
+            error_message += ": Ошибка в формате ответа от AI. Мы работаем над исправлением проблемы."
         else:
             error_message += f": {str(e)}"
         

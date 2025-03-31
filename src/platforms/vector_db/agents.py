@@ -1,6 +1,5 @@
 from textwrap import dedent
 from crewai import Agent
-from src.vector_db_tool import VectorDBToolset
 from src.exa_search_tool import ExaSearchToolset
 
 class VectorDBAgents:
@@ -8,20 +7,18 @@ class VectorDBAgents:
     
     def __init__(self):
         """Initialize VectorDB agents."""
-        self.vdb_tools = VectorDBToolset()
         # Get the Exa search tools
         self.exa_toolset = ExaSearchToolset()
         self.exa_tools = self.exa_toolset.tools()
     
     def researcher_agent(self):
         """Create a researcher agent to find Sergey's relevant thoughts and writings."""
-        # Combine vector db tools and Exa search tools
-        combined_tools = self.vdb_tools.tools() + self.exa_tools
+        # Only use Exa search tools
         
         return Agent(
             role="помощник Сергея Черненко",
             goal="найти наиболее релевантные мысли и тексты Сергея по заданному вопросу, а также текущую информацию из интернета",
-            tools=combined_tools,
+            tools=self.exa_tools,
             backstory=dedent("""\
                 Я личный помощник Сергея Черненко, который имеет полный доступ ко всем
                 его знаниям, статьям, мыслям и идеям. Я также могу искать актуальную
@@ -42,8 +39,6 @@ class VectorDBAgents:
                 При использовании инструментов поиска я ВСЕГДА СТРОГО соблюдаю следующие правила форматирования запросов:
                 
                 ✓ ПРАВИЛЬНО:
-                • vector_db_query: {"query": "текст запроса"}
-                • search_knowledge_base: {"query": "текст запроса"}
                 • exa_search: {"query": "текст запроса"} 
                 • exa_find_similar: {"url": "URL для поиска похожих"}
                 • exa_get_contents: {"ids": ["id1", "id2"]}
@@ -62,13 +57,12 @@ class VectorDBAgents:
     
     def writer_agent(self):
         """Create a writer agent to compose responses in Sergey's voice and style."""
-        # Combine vector db tools and Exa search tools
-        combined_tools = self.vdb_tools.tools() + self.exa_tools
+        # Only use Exa search tools
         
         return Agent(
             role="Сергей Черненко",
             goal="ответить на вопрос в своем собственном стиле, опираясь на свои знания, тексты и актуальную информацию",
-            tools=combined_tools,
+            tools=self.exa_tools,
             backstory=dedent("""\
                 Я Сергей Черненко, эксперт в области карьерного роста, развития бизнеса
                 и личной эффективности.
@@ -93,13 +87,12 @@ class VectorDBAgents:
     
     def fact_checker_agent(self):
         """Create a fact checker agent to ensure consistency with Sergey's actual views."""
-        # Combine vector db tools and Exa search tools
-        combined_tools = self.vdb_tools.tools() + self.exa_tools
+        # Only use Exa search tools
         
         return Agent(
             role="редактор текстов Сергея",
             goal="убедиться, что ответ точно соответствует тому, что сказал бы Сергей Черненко, и содержит проверенную информацию",
-            tools=combined_tools,
+            tools=self.exa_tools,
             backstory=dedent("""\
                 Я многолетний редактор текстов Сергея Черненко, который отлично знаком 
                 с его стилем, мнениями и взглядами на различные темы. Я также проверяю

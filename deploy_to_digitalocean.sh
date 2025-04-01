@@ -4,10 +4,10 @@
 set -e
 
 # Configuration variables - update these with your values
-DROPLET_IP=""
+DROPLET_IP="104.248.170.41"
 SSH_USER="root"
-SSH_KEY_PATH="~/.ssh/id_rsa"
-REPO_URL="https://github.com/yourusername/teleCreaaiQdrant.git"
+SSH_KEY_PATH="~/.ssh/id_ed25519"
+REPO_URL="https://github.com/shmudivel/teleCreaaiQdrant.git"
 BRANCH="deployment"
 
 # Colors for output
@@ -54,39 +54,52 @@ ssh -i $SSH_KEY_PATH $SSH_USER@$DROPLET_IP << 'ENDSSH'
         echo "Docker Compose already installed"
     fi
 
-    # Create app directory if it doesn't exist
-    APP_DIR="/opt/telecreat"
-    if [ ! -d "$APP_DIR" ]; then
-        echo "Creating application directory..."
-        mkdir -p $APP_DIR
-    fi
+    # Use existing project directory
+    APP_DIR="/root/teleCreaaiQdrant"
     
     cd $APP_DIR
     
-    # Clone or update repository
-    if [ ! -d ".git" ]; then
-        echo "Cloning repository..."
-        git clone -b BRANCH REPO_URL .
-    else
-        echo "Updating repository..."
-        git fetch
-        git checkout BRANCH
-        git pull
+    # Backup current configuration
+    echo "Backing up current configuration..."
+    if [ -f ".env.prod" ]; then
+        cp .env.prod .env.prod.backup
     fi
     
-    # Copy environment file if it doesn't exist
-    if [ ! -f ".env.prod" ]; then
-        echo "Warning: .env.prod file not found. Please upload it manually."
+    # Backup any custom credentials
+    if [ -f "bustling-folio-439811-h8-539f8ab05fa7.json" ]; then
+        cp bustling-folio-439811-h8-539f8ab05fa7.json bustling-folio-439811-h8-539f8ab05fa7.json.backup
     fi
     
-    # Copy Google credentials if needed
-    if [ ! -f "bustling-folio-439811-h8-539f8ab05fa7.json" ]; then
-        echo "Warning: Google credentials file not found. Please upload it manually."
+    # Stop current containers
+    echo "Stopping current services..."
+    docker-compose -f docker-compose.prod.yml down || true
+    
+    # Update repository
+    echo "Updating repository..."
+    git fetch
+    git checkout main
+    git pull
+    
+    # Update to deployment branch if it exists
+    if git ls-remote --heads origin deployment | grep deployment; then
+        echo "Checking out deployment branch..."
+        git checkout deployment || git checkout -b deployment origin/deployment
+    fi
+    
+    # Restore configuration from backup
+    if [ -f ".env.prod.backup" ]; then
+        echo "Restoring .env.prod from backup..."
+        cp .env.prod.backup .env.prod
+    fi
+    
+    # Restore credentials
+    if [ -f "bustling-folio-439811-h8-539f8ab05fa7.json.backup" ]; then
+        echo "Restoring Google credentials from backup..."
+        cp bustling-folio-439811-h8-539f8ab05fa7.json.backup bustling-folio-439811-h8-539f8ab05fa7.json
     fi
     
     # Build and start containers
     echo "Building and starting containers..."
-    docker-compose -f docker-compose.prod.yml down
     docker-compose -f docker-compose.prod.yml build
     docker-compose -f docker-compose.prod.yml up -d
     
@@ -97,11 +110,5 @@ ssh -i $SSH_KEY_PATH $SSH_USER@$DROPLET_IP << 'ENDSSH'
     echo "Deployment completed."
 ENDSSH
 
-# Replace placeholders with actual values
-sed -i "s|REPO_URL|$REPO_URL|g; s|BRANCH|$BRANCH|g" deploy_to_digitalocean.sh
-
 echo_color "Deployment script completed." "${GREEN}"
-echo_color "IMPORTANT:" "${RED}"
-echo_color "1. Update DROPLET_IP, SSH_USER, SSH_KEY_PATH, and REPO_URL in this script" "${RED}"
-echo_color "2. Make sure you've copied your Google credentials and .env.prod files to the server" "${RED}"
-echo_color "3. Run this script with: bash deploy_to_digitalocean.sh" "${RED}" 
+echo_color "Your application has been updated on the DigitalOcean droplet!" "${GREEN}" 

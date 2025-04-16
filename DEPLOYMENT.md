@@ -1,70 +1,133 @@
-# Deployment Checklist
+# Deployment Instructions
 
-## Pre-Deployment Steps
+This document provides step-by-step instructions for deploying the Telegram bot to the DigitalOcean server.
 
-1. **Version Control**
-   - [x] Create `deployment` branch from current working branch
-   - [ ] Commit all changes to the `deployment` branch
-   - [ ] Push the `deployment` branch to remote repository
+## Prerequisites
 
-2. **Environment Variables**
-   - [ ] Review `.env.prod` file for any missing or incorrect values
-   - [ ] Ensure all API keys are valid and not expired
-   - [ ] Remove any development-specific variables
-   - [ ] Verify Telegram bot token is correct
-   - [ ] Check Qdrant connection parameters
-   - [ ] Verify LLM provider API keys (Anthropic/OpenAI)
+- SSH access to the DigitalOcean server (`~/.ssh/id_ed25519`)
+- Git access to the repository
+- Docker and Docker Compose installed locally (for testing)
 
-3. **Docker Configuration**
-   - [x] Verify `Dockerfile` contains all required dependencies
-   - [x] Ensure `docker-compose.prod.yml` is properly configured
-   - [ ] Test build locally: `docker-compose -f docker-compose.prod.yml build`
-   - [ ] Test run locally: `docker-compose -f docker-compose.prod.yml up`
+## Local Development
 
-## Deployment Process
+### 1. Making Changes
 
-1. **Server Setup**
-   - [ ] Provision VM on preferred cloud platform (DigitalOcean, AWS, GCP, etc.)
-   - [ ] Install Docker and Docker Compose on the server
-   - [ ] Configure firewall to allow necessary connections
-   - [ ] Set up SSH keys for secure access
+Make your code changes locally and test them:
 
-2. **Project Deployment**
-   - [ ] Clone the repository on the server: `git clone -b deployment [repository-url]`
-   - [ ] Copy necessary credential files to the server (Google service account JSON)
-   - [ ] Configure any server-specific environment variables
-   - [ ] Run `docker-compose -f docker-compose.prod.yml up -d` to start in detached mode
+```bash
+# Run tests
+python -m tests.run_tests
 
-3. **Post-Deployment Verification**
-   - [ ] Check if all containers are running: `docker ps`
-   - [ ] Verify logs for any errors: `docker-compose -f docker-compose.prod.yml logs`
-   - [ ] Test Telegram bot functionality
-   - [ ] Confirm Qdrant database is properly initialized
-   - [ ] Verify Google Drive integration is working
+# Test locally if possible
+docker-compose up
+```
 
-## Maintenance and Monitoring
+### 2. Committing Changes
 
-1. **Monitoring**
-   - [ ] Set up container monitoring (resources, uptime)
-   - [ ] Configure log aggregation
-   - [ ] Implement alerting for critical errors
+```bash
+# Add changed files
+git add .
 
-2. **Backup Strategy**
-   - [ ] Set up regular backups for Qdrant data volume
-   - [ ] Document the process for restoring from backups
+# Commit with descriptive message
+git commit -m "Description of changes"
 
-3. **Update Process**
-   - [ ] Document process for deploying updates
-   - [ ] Plan for zero-downtime updates if possible
+# Check status
+git status
+```
 
-## Security Considerations
+### 3. Pushing to GitHub
 
-1. **Sensitive Data**
-   - [ ] Ensure API keys are not exposed in code or logs
-   - [ ] Verify no sensitive data is committed to the repository
-   - [ ] Consider using a secure vault service for credentials
+```bash
+# Make sure you're on the deployment branch
+git checkout deployment
 
-2. **Server Security**
-   - [ ] Keep server OS and software updated
-   - [ ] Restrict SSH access
-   - [ ] Configure proper firewall rules 
+# Push to GitHub
+git push origin deployment
+```
+
+## Server Deployment
+
+### 4. Deploying to the Server
+
+```bash
+# Connect to server, pull latest code, and restart containers
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "cd /root/teleCreaaiQdrant && git pull origin deployment && docker-compose -f docker-compose.prod.yml down && docker-compose -f docker-compose.prod.yml build && docker-compose -f docker-compose.prod.yml up -d"
+```
+
+### 5. Verifying Deployment
+
+```bash
+# Check if containers are running
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "docker ps"
+
+# Check recent logs
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "docker logs telecreaaiqdrant-bot-1 --tail 20"
+
+# Run the automated check script
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "./check_telegram_bot.sh"
+```
+
+## Troubleshooting
+
+### If containers fail to start
+
+```bash
+# Check for errors in the logs
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "docker logs telecreaaiqdrant-bot-1"
+
+# Check Docker Compose configuration
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "cat docker-compose.prod.yml"
+
+# Try rebuilding without cache
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "cd /root/teleCreaaiQdrant && docker-compose -f docker-compose.prod.yml build --no-cache && docker-compose -f docker-compose.prod.yml up -d"
+```
+
+### If the bot is not responding
+
+```bash
+# Restart just the bot container
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "docker restart telecreaaiqdrant-bot-1"
+
+# Check for Python errors
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "docker logs telecreaaiqdrant-bot-1 | grep -i error"
+```
+
+### Checking Environment Variables
+
+```bash
+# View environment variables in the container
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "docker exec telecreaaiqdrant-bot-1 env"
+```
+
+## Rollback Process
+
+If the new deployment has critical issues:
+
+```bash
+# Connect to the server
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41
+
+# Check out previous commit
+cd /root/teleCreaaiQdrant
+git log --oneline  # Find the previous commit hash
+git checkout <previous-commit-hash>
+
+# Rebuild and restart
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml build
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+## Monitoring After Deployment
+
+Continue to monitor the application after deployment:
+
+```bash
+# Follow live logs
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "docker logs -f telecreaaiqdrant-bot-1"
+
+# Run the monitoring script
+ssh -i ~/.ssh/id_ed25519 root@104.248.170.41 "./check_telegram_bot.sh"
+```
+
+For more detailed monitoring commands, refer to [MONITORING_README.md](MONITORING_README.md) and [monitoring_workflow.md](monitoring_workflow.md). 

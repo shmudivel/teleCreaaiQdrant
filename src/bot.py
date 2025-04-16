@@ -80,6 +80,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Доступные команды:\n'
         '/start - Начать работу с ботом\n'
         '/menu - Показать главное меню\n'
+        '/restart - Сбросить текущую сессию и начать заново\n'
         '/help - Показать эту справку\n\n'
         'В главном меню доступны следующие опции:\n'
         '• Создать текстовый пост - создать пост для выбранной соцсети (Дзен, VC.ru)\n'
@@ -87,8 +88,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '• Задать вопрос Сергею - получить ответ напрямую от Сергея Черненко на основе его знаний\n\n'
         'Для админов доступны дополнительные команды:\n'
         '/logs [число] - Показать последние записи из логов\n'
-        '/sheet - Получить ссылку на Google Sheet с логами'
+        '/sheet - Получить ссылку на Google Sheet с логами\n\n'
+        'Возникли проблемы? Используйте команду /restart для сброса сессии.'
     )
+    
+    # Clear user data when showing help
+    context.user_data.clear()
     
     return ConversationHandler.END
 
@@ -186,6 +191,8 @@ async def handle_transcription_input(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text(
             "❌ Отсутствует URL. Пожалуйста, начните процесс обновления Google Sheet заново, используя соответствующий пункт меню."
         )
+        # Clear user data if validation fails
+        context.user_data.clear()
         return ConversationHandler.END
         
     if not message_text:
@@ -237,6 +244,9 @@ async def handle_transcription_input(update: Update, context: ContextTypes.DEFAU
             f"❌ Произошла ошибка: {str(e)}\n\n"
             "Пожалуйста, попробуйте еще раз или обратитесь к администратору."
         )
+    
+    # Clear user data upon completion (success or failure)
+    context.user_data.clear()
     
     # Return to the main conversation handler
     return ConversationHandler.END
@@ -311,6 +321,35 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Операция отменена. Используйте /start для начала.")
     return ConversationHandler.END
 
+async def end_conversation_and_reset(update: Update, context: ContextTypes.DEFAULT_TYPE, message=None, reply_markup=None):
+    """Utility function to properly end a conversation and reset user state.
+    
+    Args:
+        update: The update object
+        context: The context object
+        message: Optional message to send to the user
+        reply_markup: Optional reply markup to include with the message
+        
+    Returns:
+        ConversationHandler.END to properly end the conversation
+    """
+    # Clear user data
+    context.user_data.clear()
+    
+    # Send message if provided
+    if message:
+        if hasattr(update, 'message') and update.message:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+        elif hasattr(update, 'callback_query') and update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+    
+    # Log conversation end
+    user_id = update.effective_user.id if update.effective_user else "unknown"
+    logger.info(f"Ending conversation and resetting state for user {user_id}")
+    
+    # Return END to properly end the conversation
+    return ConversationHandler.END
+
 async def handle_back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the 'Back to menu' button click."""
     query = update.callback_query
@@ -361,6 +400,8 @@ async def handle_back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.message.reply_text("Используйте /start для возврата в главное меню.")
         except:
             logger.error("Failed to send fallback message")
+        # Make sure to clear context data even on error
+        context.user_data.clear()
         return ConversationHandler.END
 
 async def handle_platform_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -878,25 +919,14 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
 
 async def handle_vector_db_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle when the user sends a query for Sergey to answer."""
+    """Handle user queries to the vector database."""
     user_id = update.effective_user.id
     query_text = update.message.text
     
-    # Enhanced validation of the query
-    if not query_text or query_text.strip() == '':
-        await update.message.reply_text(
-            "❌ Пожалуйста, задайте конкретный вопрос Сергею. Пустой запрос не может быть обработан."
-        )
+    if not query_text:
+        await update.message.reply_text("Пожалуйста, введите вопрос для Сергея Черненко.")
         return WAITING_FOR_VECTOR_DB_QUERY
     
-    # Enforce minimum query length
-    if len(query_text.strip()) < 5:
-        await update.message.reply_text(
-            "❌ Пожалуйста, сформулируйте более развернутый вопрос Сергею, чтобы он мог дать точный ответ."
-        )
-        return WAITING_FOR_VECTOR_DB_QUERY
-    
-    # Log the received query with more context
     logger.info(f"Received question for Sergey from user {user_id}: '{query_text}'")
     
     # Send processing message
@@ -938,6 +968,9 @@ async def handle_vector_db_query(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Что хотите сделать дальше?", reply_markup=reply_markup)
         
+        # Clear user data before ending conversation
+        context.user_data.clear()
+        
         return ConversationHandler.END
         
     except Exception as e:
@@ -964,7 +997,29 @@ async def handle_vector_db_query(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Хотите вернуться в меню?", reply_markup=reply_markup)
         
+        # Clear user data even on error
+        context.user_data.clear()
+        
         return ConversationHandler.END
+
+async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Force reset user state and restart the bot conversation.
+    This command is useful when a user gets stuck in a workflow."""
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} is restarting their session with /restart command")
+    
+    # Clear all user data
+    context.user_data.clear()
+    
+    # Send message to user
+    await update.message.reply_text(
+        "🔄 Ваша сессия сброшена. Теперь вы можете начать новый рабочий процесс."
+    )
+    
+    # Show main menu
+    await show_main_menu(update, context)
+    
+    return ConversationHandler.END
 
 def main():
     """Start the bot."""
@@ -978,6 +1033,7 @@ def main():
         entry_points=[
             CommandHandler("start", start),
             CommandHandler("menu", menu_command),
+            CommandHandler("restart", restart_command),
             CallbackQueryHandler(handle_menu_selection, pattern="^menu_"),
             CallbackQueryHandler(menu_callback, pattern="^add_another_record$")
         ],
@@ -1002,8 +1058,10 @@ def main():
             CommandHandler("cancel", cancel),
             CommandHandler("menu", menu_command),
             CommandHandler("start", start),
+            CommandHandler("restart", restart_command),
             CommandHandler("help", help_command),
             CallbackQueryHandler(handle_back_to_menu, pattern="^menu_back$"),
+            CallbackQueryHandler(handle_back_to_menu, pattern="^back_to_menu$"),
             MessageHandler(filters.ALL, unknown_text)
         ],
         name="main_conversation",
@@ -1016,6 +1074,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("sheet", sheet_command))
     application.add_handler(CommandHandler("menu", menu_command))
+    application.add_handler(CommandHandler("restart", restart_command))
     application.add_handler(CommandHandler("logs", logs_command))
     
     # Add conversation handler

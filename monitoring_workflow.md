@@ -153,6 +153,30 @@ docker ps
 docker logs telecreaaiqdrant-bot-1
 ```
 
+## SSH Connection Troubleshooting
+
+If you're having issues connecting to the server:
+
+```bash
+# Test SSH connection with verbose output
+ssh -v -i ~/.ssh/id_ed25519 root@104.248.170.41
+
+# Check if the SSH key has correct permissions
+chmod 600 ~/.ssh/id_ed25519
+
+# Verify SSH key is being used by SSH agent
+ssh-add -l
+
+# Add your key to SSH agent if needed
+ssh-add ~/.ssh/id_ed25519
+
+# Test connectivity to the server
+ping 104.248.170.41
+
+# Connection with alternative port if standard port is blocked
+ssh -i ~/.ssh/id_ed25519 -p 22 root@104.248.170.41
+```
+
 ## Scheduled Monitoring Script
 
 Create a script to check your services regularly:

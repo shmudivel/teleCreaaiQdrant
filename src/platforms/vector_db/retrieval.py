@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
+from qdrant_client.http import models as rest
 from langchain_qdrant import Qdrant
 from langchain_openai import OpenAIEmbeddings
 from langchain_openai import ChatOpenAI
@@ -20,38 +21,72 @@ class QdrantRetriever:
         logger.info(f"Initializing QdrantRetriever with collection: {collection_name}, top_k: {top_k}")
         
         # Connect to Qdrant
-        self.qdrant_url = os.getenv("QDRANT_HOST")
+        self.qdrant_url = os.getenv("QDRANT_HOST", os.getenv("QDRANT_URL", "http://qdrant:6333"))
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
         self.collection_name = collection_name
         self.top_k = top_k
         
         logger.info(f"Connecting to Qdrant at {self.qdrant_url}, collection: {self.collection_name}")
         
-        # Initialize client
-        self.client = QdrantClient(
-            url=self.qdrant_url,
-            api_key=self.qdrant_api_key,
-        )
-        
-        # Initialize OpenAI embeddings
-        logger.info("Initializing OpenAI embeddings")
-        self.embeddings = OpenAIEmbeddings()
-        
-        # Initialize vector store
-        logger.info("Initializing Qdrant vector store")
-        self.vector_store = Qdrant(
-            client=self.client,
-            collection_name=self.collection_name,
-            embeddings=self.embeddings,
-        )
-        
-        # Create retriever
-        logger.info(f"Creating retriever with k={self.top_k}")
-        self.retriever = self.vector_store.as_retriever(
-            search_kwargs={"k": self.top_k}
-        )
-        
-        logger.info("QdrantRetriever initialized successfully")
+        try:
+            # Initialize client
+            self.client = QdrantClient(
+                url=self.qdrant_url,
+                api_key=self.qdrant_api_key,
+                check_version=False  # Skip version check to avoid compatibility issues
+            )
+            
+            # Check if collection exists and create it if needed
+            self._ensure_collection_exists()
+            
+            # Initialize OpenAI embeddings
+            logger.info("Initializing OpenAI embeddings")
+            self.embeddings = OpenAIEmbeddings()
+            
+            # Initialize vector store
+            logger.info("Initializing Qdrant vector store")
+            self.vector_store = Qdrant(
+                client=self.client,
+                collection_name=self.collection_name,
+                embeddings=self.embeddings,
+            )
+            
+            # Create retriever
+            logger.info(f"Creating retriever with k={self.top_k}")
+            self.retriever = self.vector_store.as_retriever(
+                search_kwargs={"k": self.top_k}
+            )
+            
+            logger.info("QdrantRetriever initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing QdrantRetriever: {str(e)}")
+            raise
+    
+    def _ensure_collection_exists(self):
+        """Check if collection exists and create it if needed."""
+        try:
+            # Check if collection exists
+            collections = self.client.get_collections().collections
+            collection_names = [collection.name for collection in collections]
+            
+            if self.collection_name not in collection_names:
+                logger.warning(f"Collection '{self.collection_name}' not found. Creating it...")
+                
+                # Create new collection with OpenAI embedding dimension (1536 for text-embedding-3-small)
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=rest.VectorParams(
+                        size=1536,  # OpenAI embedding dimension
+                        distance=rest.Distance.COSINE
+                    )
+                )
+                logger.info(f"Collection '{self.collection_name}' created successfully")
+            else:
+                logger.info(f"Collection '{self.collection_name}' already exists")
+                
+        except Exception as e:
+            logger.error(f"Error checking/creating collection: {str(e)}")
+            raise
     
     def retrieve_documents(self, query):
         """Retrieve relevant documents from Qdrant based on the query."""

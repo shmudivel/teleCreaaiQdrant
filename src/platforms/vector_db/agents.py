@@ -1,5 +1,11 @@
 from textwrap import dedent
 from crewai import Agent
+from langchain_anthropic import ChatAnthropic
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class VectorDBAgents:
     """Agents for querying the vector database and generating responses as if from Sergey Chernenko."""
@@ -8,6 +14,13 @@ class VectorDBAgents:
         """Initialize VectorDB agents."""
         # Initialize with empty tools list
         self.tools = []
+        
+        # Create Claude LLM to use with agents
+        self.claude_llm = ChatAnthropic(
+            model_name="claude-3-5-sonnet-20240620",
+            temperature=0.7,
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
+        )
     
     def researcher_agent(self):
         """Create a researcher agent to find Sergey's relevant thoughts and writings."""
@@ -17,6 +30,7 @@ class VectorDBAgents:
             role="помощник Сергея Черненко",
             goal="найти наиболее релевантные мысли и тексты Сергея по заданному вопросу, а также текущую информацию из интернета",
             tools=self.tools,
+            llm=self.claude_llm,
             backstory=dedent("""\
                 Я личный помощник Сергея Черненко, который имеет полный доступ ко всем
                 его знаниям, статьям, мыслям и идеям. Я также могу искать актуальную
@@ -44,6 +58,7 @@ class VectorDBAgents:
             role="Сергей Черненко",
             goal="ответить на вопрос в своем собственном стиле, опираясь на свои знания, тексты и актуальную информацию",
             tools=self.tools,
+            llm=self.claude_llm,
             backstory=dedent("""\
                 Я Сергей Черненко, эксперт в области карьерного роста, развития бизнеса
                 и личной эффективности.
@@ -74,6 +89,7 @@ class VectorDBAgents:
             role="редактор текстов Сергея",
             goal="убедиться, что ответ точно соответствует тому, что сказал бы Сергей Черненко, и содержит проверенную информацию",
             tools=self.tools,
+            llm=self.claude_llm,
             backstory=dedent("""\
                 Я многолетний редактор текстов Сергея Черненко, который отлично знаком 
                 с его стилем, мнениями и взглядами на различные темы. Я также проверяю

@@ -2,7 +2,13 @@ from .agents import VectorDBAgents
 from .tasks import VectorDBTasks
 from .retrieval import QdrantRetriever
 from crewai import Crew
+from langchain_anthropic import ChatAnthropic
 import logging
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Get logger
 logger = logging.getLogger(__name__)
@@ -31,6 +37,13 @@ class VectorDBIntegration:
         self.max_iterations = max_iterations
         self.process_timeout = process_timeout
         
+        # Initialize Claude model for manager
+        self.manager_llm = ChatAnthropic(
+            model_name="claude-3-5-sonnet-20240620",
+            temperature=0.1,
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
+        )
+        
         logger.info("VectorDBIntegration initialized successfully")
     
     def process_query(self, user_query):
@@ -46,28 +59,10 @@ class VectorDBIntegration:
         """
         logger.info(f"Processing query: '{user_query}'")
         
-        # Generate related questions
-        logger.info("Generating related questions...")
-        questions = self.retriever.generate_questions(user_query)
-        logger.info(f"Generated {len(questions)} related questions")
-        
-        # Retrieve context for the original query and all related questions
-        all_contexts = []
-        
-        # First get context for original query
-        logger.info("Retrieving context for original query...")
-        original_context = self.retriever.get_context_for_query(user_query)
-        logger.info(f"Retrieved {len(original_context)} context items for original query")
-        all_contexts.extend(original_context)
-        
-        # Then get context for each related question - but limit to most relevant questions
-        # to avoid context overload
-        max_questions = 2  # Limit to just 2 additional questions
-        for i, question in enumerate(questions[:max_questions]):
-            logger.info(f"Retrieving context for related question {i+1}: '{question}'")
-            context = self.retriever.get_context_for_query(question)
-            logger.info(f"Retrieved {len(context)} context items for related question {i+1}")
-            all_contexts.extend(context)
+        # Use the enhanced context retrieval with keyword extraction
+        logger.info("Using enhanced context retrieval with keyword extraction...")
+        all_contexts = self.retriever.get_enhanced_context_for_query(user_query)
+        logger.info(f"Retrieved {len(all_contexts)} total enhanced context items")
         
         # Format the retrieved contexts
         logger.info(f"Formatting {len(all_contexts)} total context items...")
@@ -96,7 +91,7 @@ class VectorDBIntegration:
             process_timeout=self.process_timeout,  # Timeout in seconds
             max_rpm=None,  # No rate limiting for local execution
             max_iterations=self.max_iterations,  # Limit the number of iterations
-            manager_llm_config={"temperature": 0.1}  # Lower temperature for more focused processing
+            manager_llm=self.manager_llm  # Use Claude 3.7 Sonnet as manager
         )
         
         # Run the crew process

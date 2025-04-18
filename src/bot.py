@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
+    # Get user ID for logging
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} is starting a new session with /start command")
+    
     # Clear user data to start fresh
     context.user_data.clear()
     
@@ -48,6 +52,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Show main menu with buttons
     await show_main_menu(update, context)
     
+    # Log the start command
+    asyncio.create_task(log_message_to_sheet(user_id, "/start (command)", "", True))
+    
+    # End any active conversation
     return ConversationHandler.END
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -374,24 +382,8 @@ async def handle_back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception as edit_error:
             logger.error(f"Error editing message: {str(edit_error)}")
         
-        # Create inline keyboard for main menu
-        keyboard = [
-            [InlineKeyboardButton("Создать текстовый пост 📝", callback_data="menu_text_post")],
-            [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")],
-            [InlineKeyboardButton("Задать вопрос Сергею 🗣️", callback_data="menu_vector_db")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Send new message with main menu options
-        try:
-            await query.message.reply_text(
-                "Выберите действие:",
-                reply_markup=reply_markup
-            )
-            logger.info(f"Successfully sent main menu to user {user_id}")
-        except Exception as reply_error:
-            logger.error(f"Error sending main menu: {str(reply_error)}")
-            await query.message.reply_text("Используйте /start для возврата в главное меню.")
+        # Show main menu - using the same function as /start command
+        await show_main_menu(update, context)
         
         return ConversationHandler.END
     except Exception as e:
@@ -964,7 +956,7 @@ async def handle_vector_db_query(update: Update, context: ContextTypes.DEFAULT_T
         await processing_message.edit_text(f"{result}")
         
         # Show back to menu button
-        keyboard = [[InlineKeyboardButton("Вернуться в меню", callback_data="back_to_menu")]]
+        keyboard = [[InlineKeyboardButton("Вернуться в меню", callback_data="menu_back")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Что хотите сделать дальше?", reply_markup=reply_markup)
         
@@ -993,7 +985,7 @@ async def handle_vector_db_query(update: Update, context: ContextTypes.DEFAULT_T
         await processing_message.edit_text(error_message)
         
         # Still show back to menu button
-        keyboard = [[InlineKeyboardButton("Вернуться в меню", callback_data="back_to_menu")]]
+        keyboard = [[InlineKeyboardButton("Вернуться в меню", callback_data="menu_back")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Хотите вернуться в меню?", reply_markup=reply_markup)
         
@@ -1028,6 +1020,14 @@ def main():
     # Create the Application
     application = Application.builder().token(os.getenv("BOT_TOKEN")).build()
     
+    # Add high-priority command handlers first to ensure they work in any state
+    application.add_handler(CommandHandler("start", start), group=0)
+    application.add_handler(CommandHandler("restart", restart_command), group=0)
+    application.add_handler(CommandHandler("help", help_command), group=0)
+    application.add_handler(CommandHandler("menu", menu_command), group=0)
+    application.add_handler(CommandHandler("sheet", sheet_command), group=0)
+    application.add_handler(CommandHandler("logs", logs_command), group=0)
+    
     # Create conversation handlers
     conv_handler = ConversationHandler(
         entry_points=[
@@ -1060,22 +1060,15 @@ def main():
             CommandHandler("start", start),
             CommandHandler("restart", restart_command),
             CommandHandler("help", help_command),
-            CallbackQueryHandler(handle_back_to_menu, pattern="^menu_back$"),
-            CallbackQueryHandler(handle_back_to_menu, pattern="^back_to_menu$"),
+            CallbackQueryHandler(handle_back_to_menu, pattern="^menu_back$|^back_to_menu$"),
+            CallbackQueryHandler(handle_menu_selection, pattern="^menu_update_sheet$|^menu_text_post$|^menu_vector_db$"),
+            CommandHandler("sheet", sheet_command),
             MessageHandler(filters.ALL, unknown_text)
         ],
         name="main_conversation",
         persistent=False,
         conversation_timeout=300  # Timeout after 5 minutes of inactivity
     )
-    
-    # Add command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("sheet", sheet_command))
-    application.add_handler(CommandHandler("menu", menu_command))
-    application.add_handler(CommandHandler("restart", restart_command))
-    application.add_handler(CommandHandler("logs", logs_command))
     
     # Add conversation handler
     application.add_handler(conv_handler)
@@ -1085,6 +1078,7 @@ def main():
     application.add_handler(CallbackQueryHandler(handle_menu_callback, pattern="^menu_logs$|^menu_sheet$"))
     application.add_handler(CallbackQueryHandler(menu_callback, pattern="^add_another_record$"))
     application.add_handler(CallbackQueryHandler(refresh_sheet_access_callback, pattern="^refresh_sheet_access$"))
+    application.add_handler(CallbackQueryHandler(handle_menu_selection, pattern="^menu_update_sheet$|^menu_text_post$|^menu_vector_db$"))
     
     # Add fallback handler for messages outside conversations
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text))

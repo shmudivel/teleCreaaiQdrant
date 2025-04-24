@@ -1,0 +1,11 @@
+the workflow i am want to buid 
+
+end result, the goal - input the big text, the out put viral shorts uploaded to youtube 
+
+input: google doc share link 
+1. /Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/tests/big_text_to_reels/analyze_google_doc.py
+2. /Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/tests/big_text_to_reels/create_reel_scripts.py
+3. /Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/tests/big_text_to_reels/heygen_api_video_generator.py
+4. /Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/tests/big_text_to_reels/youtube_uploader_simple.py
+output: upload 1 most viral video to youtubeshorts from the list of all reels 
+list another 7 reels suggest to updload 

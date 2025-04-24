@@ -1,0 +1,6 @@
+google-api-python-client>=2.110.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.2.0
+anthropic>=0.15.0
+python-dotenv>=1.0.0
+concurrent-log-handler>=0.9.20 

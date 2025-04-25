@@ -63,7 +63,8 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Создать текстовый пост 📝", callback_data="menu_text_post")],
         [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")],
-        [InlineKeyboardButton("Задать вопрос Сергею 🗣️", callback_data="menu_vector_db")]
+        [InlineKeyboardButton("Задать вопрос Сергею 🗣️", callback_data="menu_vector_db")],
+        [InlineKeyboardButton("Google Doc в YouTube 🎬", callback_data="menu_workflow")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -93,7 +94,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'В главном меню доступны следующие опции:\n'
         '• Создать текстовый пост - создать пост для выбранной соцсети (Дзен, VC.ru)\n'
         '• Обновить Google Sheet - добавить запись в таблицу сообщений\n'
-        '• Задать вопрос Сергею - получить ответ напрямую от Сергея Черненко на основе его знаний\n\n'
+        '• Задать вопрос Сергею - получить ответ напрямую от Сергея Черненко на основе его знаний\n'
+        '• Google Doc в YouTube - обработать документ для создания коротких видео для YouTube\n\n'
         'Для админов доступны дополнительные команды:\n'
         '/logs [число] - Показать последние записи из логов\n'
         '/sheet - Получить ссылку на Google Sheet с логами\n\n'
@@ -143,6 +145,16 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
             
             return WAITING_FOR_VECTOR_DB_QUERY
             
+        elif selection == "menu_workflow":
+            # Google Doc to YouTube workflow
+            await query.edit_message_text(
+                "Пожалуйста, отправьте ссылку на Google Doc с контентом для создания YouTube видео 📄\n\n"
+                "Документ будет обработан и разделен на короткие видеоролики для YouTube."
+            )
+            context.user_data['flow'] = 'google_doc_to_youtube'
+            
+            return WAITING_FOR_URL
+            
     except Exception as e:
         logger.error(f"Error handling menu selection: {str(e)}")
         await query.message.reply_text(f"❌ Произошла ошибка: {str(e)}")
@@ -183,6 +195,21 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Спасибо! Теперь отправьте транскрипцию или описание для этой ссылки 📝"
         )
         return WAITING_FOR_TRANSCRIPTION
+    
+    elif context.user_data.get('flow') == 'google_doc_to_youtube':
+        # Google Doc to YouTube flow - validate Google Doc URL
+        doc_id = extract_doc_id(text)
+        if not doc_id:
+            await update.message.reply_text(
+                "Пожалуйста, отправьте корректную ссылку на Google Doc с контентом 📄"
+            )
+            return WAITING_FOR_URL
+        
+        # Process the document for YouTube workflow
+        await process_google_doc_for_youtube(update, context, text)
+        
+        # End the conversation after starting the workflow
+        return ConversationHandler.END
     
     # Fallback for unexpected flow state
     await update.message.reply_text("Что-то пошло не так. Пожалуйста, начните сначала с команды /start")
@@ -784,6 +811,7 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Создать текстовый пост 📝", callback_data="menu_text_post")],
         [InlineKeyboardButton("Обновить Google Sheet 📊", callback_data="menu_update_sheet")],
         [InlineKeyboardButton("Задать вопрос Сергею 🗣️", callback_data="menu_vector_db")],
+        [InlineKeyboardButton("Google Doc в YouTube 🎬", callback_data="menu_workflow")],
         [InlineKeyboardButton("Посмотреть логи 🔍", callback_data="menu_logs")],
         [InlineKeyboardButton("Получить ссылку на таблицу 📊", callback_data="menu_sheet")]
     ]
@@ -1013,6 +1041,202 @@ async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     return ConversationHandler.END
 
+async def process_google_doc_for_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE, doc_url: str):
+    """Process a Google Doc for YouTube videos using the workflow platform."""
+    # Send processing message
+    processing_message = await update.message.reply_text("⏳ Обрабатываю документ и создаю видеоролики. Это может занять некоторое время...")
+    
+    try:
+        # Get the workflow tasks
+        from src.platforms.factory import PlatformFactory
+        workflow_tasks = PlatformFactory.get_platform_tasks("workflow")
+        
+        # Create a timestamp-based output directory
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = f"output_{timestamp}"
+        
+        # Log process start
+        logger.info(f"Starting Google Doc to YouTube workflow for {doc_url} with output to {output_dir}")
+        
+        # Process the document in a background task
+        import asyncio
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: workflow_tasks.google_doc_to_reels_task(doc_url, output_dir)
+        )
+        
+        # Process completed
+        if result:
+            final_reels_dir = result.get("final_reels_dir", "")
+            
+            # Create success message
+            success_message = (
+                "✅ Обработка документа завершена успешно!\n\n"
+                f"📂 Видеоролики сохранены в: {final_reels_dir}\n\n"
+                "Процесс создал следующие материалы:\n"
+                "1. Проанализированный документ\n"
+                "2. Сценарии для коротких видео\n"
+                "3. Отобраны самые потенциально вирусные ролики\n"
+                "4. Финальные отредактированные видеосценарии"
+            )
+            
+            # Update the processing message
+            await processing_message.edit_text(success_message)
+            
+            # Load the top reels to present for selection
+            try:
+                import os
+                import json
+                
+                # Create a list to store reel information
+                reels = []
+                
+                # Load all final reel JSON files
+                for filename in os.listdir(final_reels_dir):
+                    if filename.endswith('.json') and filename.startswith('final_'):
+                        file_path = os.path.join(final_reels_dir, filename)
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                                reels.append({
+                                    'path': file_path,
+                                    'data': data,
+                                    'filename': filename
+                                })
+                        except Exception as e:
+                            logger.error(f"Error loading {filename}: {e}")
+                
+                # Sort reels by index in filename
+                reels.sort(key=lambda x: int(os.path.basename(x['path']).split('_')[1]))
+                
+                # Check if we have reels to display
+                if reels:
+                    # Store reels in user_data for callback handling
+                    context.user_data['reels'] = reels
+                    context.user_data['final_reels_dir'] = final_reels_dir
+                    
+                    # Create inline buttons for each reel
+                    keyboard = []
+                    for i, reel in enumerate(reels, 1):
+                        title = reel['data'].get('title', f'Ролик {i}')
+                        # Limit title length to avoid button overflow
+                        if len(title) > 40:
+                            title = title[:37] + "..."
+                        keyboard.append([InlineKeyboardButton(f"{i}. {title}", callback_data=f"reel_{i-1}")])
+                    
+                    # Add back button
+                    keyboard.append([InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")])
+                    
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await update.message.reply_text(
+                        "Выберите ролик для генерации в HeyGen и загрузки на YouTube:",
+                        reply_markup=reply_markup
+                    )
+                else:
+                    # No reels found
+                    await update.message.reply_text(
+                        "❌ Не найдено ни одного готового ролика в указанной директории.",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                        ]])
+                    )
+            except Exception as e:
+                logger.error(f"Error loading reels for selection: {str(e)}")
+                # Show menu button as fallback
+                keyboard = [
+                    [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text("Произошла ошибка при загрузке роликов.", reply_markup=reply_markup)
+        else:
+            # Error occurred
+            await processing_message.edit_text(
+                "❌ Произошла ошибка при обработке документа. Пожалуйста, проверьте логи и попробуйте снова."
+            )
+    
+    except Exception as e:
+        logger.error(f"Error in process_google_doc_for_youtube: {str(e)}")
+        # Update the processing message with error
+        await processing_message.edit_text(
+            f"❌ Произошла ошибка при обработке документа: {str(e)}\n\n"
+            "Пожалуйста, проверьте, что документ доступен и повторите попытку."
+        )
+
+async def handle_reel_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the selection of a reel for processing with HeyGen and uploading to YouTube."""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        # Get the selected reel index from the callback data
+        reel_idx = int(query.data.split('_')[1])
+        
+        # Get the reels list from user_data
+        reels = context.user_data.get('reels', [])
+        
+        if not reels or reel_idx >= len(reels):
+            await query.edit_message_text(
+                "❌ Выбранный ролик не найден. Пожалуйста, попробуйте снова.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return
+        
+        # Get the selected reel metadata
+        selected_reel = reels[reel_idx]['data']
+        title = selected_reel.get('title', 'Без названия')
+        
+        # Update the message to show processing status
+        processing_message = await query.edit_message_text(
+            f"⏳ Обрабатываю выбранный ролик: {title}\n\n"
+            "Идет генерация видео в HeyGen и загрузка на YouTube. Это может занять несколько минут..."
+        )
+        
+        # Get the workflow tasks
+        from src.platforms.factory import PlatformFactory
+        workflow_tasks = PlatformFactory.get_platform_tasks("workflow")
+        
+        # Process the selected reel in a background task
+        import asyncio
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(
+            None,
+            lambda: workflow_tasks.process_selected_reel_task(selected_reel)
+        )
+        
+        if success:
+            # Show success message
+            await processing_message.edit_text(
+                f"✅ Видео успешно обработано и загружено на YouTube!\n\n"
+                f"Название: {title}\n\n"
+                "Видео доступно по ссылке, которая отображается в логах."
+            )
+        else:
+            # Show error message
+            await processing_message.edit_text(
+                f"❌ Произошла ошибка при обработке ролика: {title}\n\n"
+                "Проверьте логи для получения дополнительной информации."
+            )
+        
+        # Show menu button
+        keyboard = [
+            [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.effective_chat.send_message("Что делаем дальше?", reply_markup=reply_markup)
+        
+    except Exception as e:
+        logger.error(f"Error in handle_reel_selection: {str(e)}")
+        await query.edit_message_text(
+            f"❌ Произошла ошибка при обработке ролика: {str(e)}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+            ]])
+        )
+
 def main():
     """Start the bot."""
     logger.info("Starting bot...")
@@ -1061,7 +1285,6 @@ def main():
             CommandHandler("restart", restart_command),
             CommandHandler("help", help_command),
             CallbackQueryHandler(handle_back_to_menu, pattern="^menu_back$|^back_to_menu$"),
-            CallbackQueryHandler(handle_menu_selection, pattern="^menu_update_sheet$|^menu_text_post$|^menu_vector_db$"),
             CommandHandler("sheet", sheet_command),
             MessageHandler(filters.ALL, unknown_text)
         ],
@@ -1078,7 +1301,10 @@ def main():
     application.add_handler(CallbackQueryHandler(handle_menu_callback, pattern="^menu_logs$|^menu_sheet$"))
     application.add_handler(CallbackQueryHandler(menu_callback, pattern="^add_another_record$"))
     application.add_handler(CallbackQueryHandler(refresh_sheet_access_callback, pattern="^refresh_sheet_access$"))
-    application.add_handler(CallbackQueryHandler(handle_menu_selection, pattern="^menu_update_sheet$|^menu_text_post$|^menu_vector_db$"))
+    application.add_handler(CallbackQueryHandler(handle_menu_selection, pattern="^menu_update_sheet$|^menu_text_post$|^menu_vector_db$|^menu_workflow$|^menu_logs$|^menu_sheet$"))
+    
+    # Add handler for reel selection
+    application.add_handler(CallbackQueryHandler(handle_reel_selection, pattern="^reel_\d+$"))
     
     # Add fallback handler for messages outside conversations
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text))

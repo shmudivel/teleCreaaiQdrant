@@ -1,0 +1,51 @@
+# YouTube Token Authentication Instructions
+
+## Option 1: Mount token file when running Docker container
+
+Add the following to your `docker run` command:
+
+```bash
+docker run -v /path/to/youtube_token.json:/app/youtube_token.json your-image-name
+```
+
+## Option 2: Update Dockerfile to include token
+
+Add these lines to your Dockerfile:
+
+```dockerfile
+# Copy YouTube token for authentication
+COPY youtube_token.json /app/youtube_token.json
+```
+
+## Option 3: Set environment variable for token path
+
+Add this to your `docker run` command:
+
+```bash
+docker run -e YOUTUBE_TOKEN_PATH=/path/in/container/youtube_token.json your-image-name
+```
+
+## How to generate a new token file
+
+If you need to generate a new token file:
+
+1. Run the bot on a machine with a browser
+2. Attempt to upload a video, which will trigger authentication
+3. Complete the OAuth flow in the browser
+4. Look for the generated `youtube_token.json` file
+5. Copy this file to your Docker container using one of the methods above
+
+## Token format reference
+
+The token file should be in this format:
+
+```json
+{
+  "token": "your-access-token",
+  "refresh_token": "your-refresh-token",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "client_id": "your-client-id",
+  "client_secret": "your-client-secret",
+  "scopes": ["https://www.googleapis.com/auth/youtube.upload"]
+}
+``` 

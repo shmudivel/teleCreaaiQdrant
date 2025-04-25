@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  bot:
+    volumes:
+      - ./youtube_token.json:/app/youtube_token.json
+    environment:
+      - YOUTUBE_TOKEN_PATH=/app/youtube_token.json
+    # Include other environment variables and configuration from your main docker-compose file
+
+# To use this file, run:
+# docker-compose -f docker-compose.yml -f docker-compose.youtube.yml up -d 

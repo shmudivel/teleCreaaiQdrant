@@ -5,6 +5,8 @@ from .vc import agents as vc_agents
 from .vc import tasks as vc_tasks
 from .vector_db import agents as vector_db_agents
 from .vector_db import tasks as vector_db_tasks
+from .workflow import agents as workflow_agents
+from .workflow import tasks as workflow_tasks
 
 class PlatformFactory:
     """Factory for creating platform-specific agents and tasks."""
@@ -24,6 +26,11 @@ class PlatformFactory:
             "agents": vector_db_agents.VectorDBAgents,
             "tasks": vector_db_tasks.VectorDBTasks,
             "display_name": "Векторная база данных"
+        },
+        "workflow": {
+            "agents": workflow_agents.WorkflowAgents,
+            "tasks": workflow_tasks.WorkflowTasks,
+            "display_name": "Google Doc to YouTube Workflow"
         }
     }
     

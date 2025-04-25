@@ -8,6 +8,7 @@ services:
       - PYTHONPATH=/app
     volumes:
       - ./src:/app/src
+      - ./youtube_token.json:/app/youtube_token.json
     depends_on:
       - qdrant
 

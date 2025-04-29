@@ -5,6 +5,8 @@ import anthropic
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import List, Dict, Any
+from .prompts import VIRAL_ANALYSIS_PROMPT, VIRAL_ANALYSIS_SYSTEM_PROMPT
+from .api_utils import create_claude_client, call_claude_api, RateLimiter, exponential_backoff_retry
 
 # Load environment variables
 load_dotenv("tests/big_text_to_reels/env.")
@@ -14,7 +16,7 @@ def get_client(api_key=None):
     """Get Anthropic client with provided API key or from environment variable."""
     if not api_key:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
-    return anthropic.Anthropic(api_key=api_key)
+    return create_claude_client(api_key)
 
 def load_metadata_files(metadata_dir: str) -> List[Dict[str, Any]]:
     """Load all metadata files from the specified directory."""
@@ -33,78 +35,73 @@ def load_metadata_files(metadata_dir: str) -> List[Dict[str, Any]]:
     
     return metadata_files
 
+@exponential_backoff_retry()
+def analyze_single_reel(reel_data: Dict[str, Any], client, model="claude-3-7-sonnet-20250219") -> Dict[str, Any]:
+    """Analyze a single reel with retry logic."""
+    # Format the prompt with reel data
+    formatted_prompt = VIRAL_ANALYSIS_PROMPT.format(
+        title=reel_data.get('title', 'No title'),
+        description=reel_data.get('description', 'No description'),
+        heygen_script=reel_data.get('heygen_script', 'No script'),
+        hashtags=', '.join(reel_data.get('hashtags', []))
+    )
+    
+    result = call_claude_api(
+        client=client,
+        model=model,
+        prompt=formatted_prompt,
+        system=VIRAL_ANALYSIS_SYSTEM_PROMPT,
+        max_tokens=1000,
+        temperature=0
+    )
+    
+    # Try to parse the response as JSON
+    try:
+        analysis = json.loads(result)
+        return analysis
+    except json.JSONDecodeError:
+        # If we can't parse as JSON, extract score using simple parsing
+        if 'score' in result.lower():
+            try:
+                score_text = result.lower().split('score')[1]
+                # Extract digits
+                score = ''.join(filter(str.isdigit, score_text[:10]))
+                if score:
+                    return {
+                        'score': int(score),
+                        'explanation': result
+                    }
+            except Exception:
+                pass
+        
+        # Return a basic fallback
+        return {
+            'score': 5,  # Middle score as fallback
+            'explanation': 'Failed to parse response',
+            'raw_response': result
+        }
+
 def analyze_viral_potential(metadata_files: List[Dict[str, Any]], api_key=None) -> List[Dict[str, Any]]:
     """Use Claude API to analyze and score each reel for viral potential."""
     results = []
     client = get_client(api_key)
     
+    # Create rate limiter to stay within API limits (max 12 calls per minute)
+    rate_limiter = RateLimiter(calls_per_minute=12)
+    
     for reel_data in metadata_files:
-        # Create a prompt to analyze viral potential
-        prompt = f"""
-You are a retention optimization specialist for short-form video content.
-
-Analyze this reel content and rate its retention potential (likelihood viewers will watch to the end) on a scale of 1-10:
-
-{reel_data.get('title', 'No title')}
-{reel_data.get('description', 'No description')}
-{reel_data.get('heygen_script', 'No script')}
-Tags: {', '.join(reel_data.get('hashtags', []))}
-
-Frame your analysis around these retention factors:
-- Hook strength (first 3 seconds grab attention)
-- Story arc (maintains curiosity throughout)
-- Pacing (no slow moments that cause drop-off)
-- Promise fulfillment (delivers on hook's promise)
-- Length optimization (content is tight, no fluff)
-- Call-to-action timing (placed at peak engagement)
-
-Return a JSON object:
-{{
-  "score": [1-10 integer],
-  "explanation": [why viewers will/won't stay to the end],
-  "improvement_insight": [specific suggestion to increase retention]
-}}
-"""
         try:
-            message = client.messages.create(
-                model="claude-3-7-sonnet-20250219",
-                max_tokens=1000,
-                temperature=0,
-                system="You analyze social media content and predict its viral potential. Respond only with JSON.",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            # Extract JSON from response
-            response_text = message.content[0].text
-            # Try to parse the response as JSON
-            try:
-                analysis = json.loads(response_text)
+            # Use rate limiter to prevent hitting API limits
+            with rate_limiter:
+                print(f"Analyzing {reel_data.get('filename', 'unknown file')}")
+                analysis = analyze_single_reel(reel_data, client)
+                
                 # Add the analysis to the reel data
                 reel_data['viral_analysis'] = analysis
                 results.append(reel_data)
                 print(f"Analyzed {reel_data['filename']} - Score: {analysis.get('score', 'N/A')}")
-            except json.JSONDecodeError:
-                # If we can't parse as JSON, extract score using simple parsing
-                if 'score' in response_text.lower():
-                    try:
-                        score_text = response_text.lower().split('score')[1]
-                        # Extract digits
-                        score = ''.join(filter(str.isdigit, score_text[:10]))
-                        if score:
-                            reel_data['viral_analysis'] = {
-                                'score': int(score),
-                                'explanation': response_text
-                            }
-                            results.append(reel_data)
-                            print(f"Analyzed {reel_data['filename']} - Score: {score}")
-                    except Exception as e:
-                        print(f"Error extracting score from response: {e}")
-                        reel_data['viral_analysis'] = {'score': 0, 'explanation': 'Failed to parse response'}
-                        results.append(reel_data)
         except Exception as e:
-            print(f"Error analyzing {reel_data.get('filename', 'unknown file')}: {e}")
+            print(f"Error analyzing {reel_data.get('filename', 'unknown file')}: {str(e)}")
             reel_data['viral_analysis'] = {'score': 0, 'explanation': f'API error: {str(e)}'}
             results.append(reel_data)
     

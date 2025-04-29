@@ -6,6 +6,8 @@ import anthropic
 import argparse
 from urllib.parse import urlparse, parse_qs
 import datetime
+from .prompts import DOC_ANALYSIS_PROMPT, DOC_ANALYSIS_SYSTEM_PROMPT
+from .api_utils import create_claude_client, call_claude_api, exponential_backoff_retry
 
 # Google API scopes needed
 SCOPES = ['https://www.googleapis.com/auth/documents.readonly']
@@ -59,39 +61,19 @@ def get_document_content(doc_id, service_account_file):
     
     return content
 
+@exponential_backoff_retry()
 def analyze_with_claude(text):
-    """Analyze text using Claude 3.5 and divide it into topical sections."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    """Analyze text using Claude 3.7 and divide it into topical sections."""
+    client = create_claude_client(ANTHROPIC_API_KEY)
     
-    prompt = """Analyze the following text and divide it into distinct topical sections. 
-    
-For each natural transition between topics, insert a divider line (--------) to clearly mark where one topic ends and another begins. Focus on identifying meaningful semantic shifts rather than arbitrary divisions.
-
-IMPORTANT: 
-1. Return the FULL ORIGINAL TEXT with divider lines inserted at the topic transitions. 
-2. Do not summarize or remove any of the original content. Just add the divider lines where appropriate.
-3. Do not add any introductory text or explanation. Start directly with the original text."""
-    
-    message = client.messages.create(
-        model="claude-3-7-sonnet-20250219",  # Update with the correct model name if needed
+    result = call_claude_api(
+        client=client,
+        model="claude-3-7-sonnet-20250219",
+        prompt=f"{DOC_ANALYSIS_PROMPT}\n\nText:\n{text}",
+        system=DOC_ANALYSIS_SYSTEM_PROMPT,
         max_tokens=8000,
-        temperature=0,
-        system="You are an AI assistant that analyzes text and divides it into logical topical sections while preserving all original content. Do not add any introductory text or explanation.",
-        messages=[
-            {"role": "user", "content": f"{prompt}\n\nText:\n{text}"}
-        ]
+        temperature=0
     )
-    
-    # Extract content as string from the response
-    result = ""
-    if hasattr(message.content, '__iter__') and not isinstance(message.content, str):
-        # If content is a list or other iterable but not a string
-        for item in message.content:
-            if hasattr(item, 'text') and item.text:
-                result += item.text
-    else:
-        # If content is already a string or has a direct string representation
-        result = str(message.content)
     
     # Remove any introductory text before the actual content
     intro_patterns = [

@@ -22,6 +22,10 @@ import google_auth_oauthlib.flow
 from .analyze_google_doc import extract_doc_id_from_url, get_document_content, analyze_with_claude
 from .create_reel_scripts import ReelGenerator
 from .reel_picker import load_metadata_files, analyze_viral_potential, select_top_reels, save_top_reels, get_client
+# Import prompts
+from .prompts import DEFAULT_EDIT_GUIDELINES, HOOK_VARIATIONS, FINAL_EDITING_PROMPT, FINAL_EDITING_SYSTEM_PROMPT
+# Import API utilities
+from .api_utils import call_claude_api, RateLimiter, exponential_backoff_retry, create_claude_client
 
 # Set up logging
 logging.basicConfig(
@@ -222,6 +226,31 @@ def pick_top_reels(metadata_dir: str, top_n: int = 7, api_key: Optional[str] = N
     
     return top_reels_dir
 
+@exponential_backoff_retry()
+def edit_reel_script(client, reel_data, edit_prompt, hook_variant, model="claude-3-7-sonnet-20250219"):
+    """Edit a reel script with retry logic."""
+    script = reel_data.get('heygen_script', '')
+    title = reel_data.get('title', '')
+    
+    # Format the prompt
+    user_prompt = FINAL_EDITING_PROMPT.format(
+        script=script,
+        title=title,
+        edit_prompt=edit_prompt,
+        hook_variant=hook_variant
+    )
+    
+    result = call_claude_api(
+        client=client,
+        model=model,
+        prompt=user_prompt,
+        system=FINAL_EDITING_SYSTEM_PROMPT,
+        max_tokens=1500,
+        temperature=0.7
+    )
+    
+    return result.strip()
+
 def final_reel_editing(top_reels_dir: str, edit_prompt: str, api_key: Optional[str] = None) -> str:
     """Apply final edits to top reels to improve engagement.
     
@@ -240,7 +269,7 @@ def final_reel_editing(top_reels_dir: str, edit_prompt: str, api_key: Optional[s
         api_key = os.environ.get("ANTHROPIC_API_KEY")
     
     # Get Anthropic client
-    client = get_client(api_key)
+    client = create_claude_client(api_key)
     
     # Define output directory
     parent_dir = os.path.dirname(top_reels_dir)
@@ -249,20 +278,8 @@ def final_reel_editing(top_reels_dir: str, edit_prompt: str, api_key: Optional[s
     # Create output directory path
     Path(final_reels_dir).mkdir(parents=True, exist_ok=True)
     
-    # Hooks to alternate between (from prompt)
-    hook_variations = [
-        "Это видео для тех, кто...",
-        "Это история о том, как...",
-        "А вы знали, что...",
-        "Вряд ли вы мне поверите, но...",
-        "У меня ушло несколько лет, чтобы...",
-        "Короче...",
-        "Самый классный в мире...",
-        "Самый провальный...",
-        "Самый лучший...",
-        "Самый быстрый...",
-        "Самый неэффективный способ..."
-    ]
+    # Create rate limiter to avoid hitting API limits
+    rate_limiter = RateLimiter(calls_per_minute=10)
     
     # Load metadata files
     logger.info(f"Loading top reels from {top_reels_dir}...")
@@ -280,50 +297,17 @@ def final_reel_editing(top_reels_dir: str, edit_prompt: str, api_key: Optional[s
     
     for i, reel_data in enumerate(metadata_files):
         # Select a random hook variant for each reel
-        hook_variant = random.choice(hook_variations)
-        
-        # Get the script content
-        script = reel_data.get('heygen_script', '')
-        title = reel_data.get('title', '')
-        
-        # Create a prompt for Claude to edit the reel
-        system_prompt = "You are an expert at editing social media scripts to maximize engagement. Make edits according to the guidelines provided, while preserving the core message and educational value."
-        
-        user_prompt = f"""Edit this Instagram reel script to make it more engaging and viral. 
-
-CURRENT SCRIPT:
-{script}
-
-TITLE:
-{title}
-
-EDITING GUIDELINES:
-{edit_prompt}
-
-For this specific reel, use the following hook style:
-{hook_variant}
-
-Return ONLY the edited script text without any explanation or additional formatting. The script should be ready to use as-is and in Russian language.
-"""
+        hook_variant = random.choice(HOOK_VARIATIONS)
         
         try:
-            # Call Claude to edit the script
-            logger.info(f"Editing reel {i+1}/{len(metadata_files)}...")
-            response = client.messages.create(
-                model="claude-3-7-sonnet-20250219",
-                max_tokens=1500,
-                temperature=0.7,
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            
-            # Extract content as string from the response
-            edited_script = response.content[0].text.strip()
+            # Use rate limiter to prevent hitting API limits
+            with rate_limiter:
+                # Call Claude to edit the script
+                logger.info(f"Editing reel {i+1}/{len(metadata_files)}...")
+                edited_script = edit_reel_script(client, reel_data, edit_prompt, hook_variant)
             
             # Update the reel data
-            reel_data['original_script'] = script
+            reel_data['original_script'] = reel_data.get('heygen_script', '')
             reel_data['heygen_script'] = edited_script
             
             # Save the edited reel metadata
@@ -332,6 +316,7 @@ Return ONLY the edited script text without any explanation or additional formatt
                 json.dump(reel_data, f, ensure_ascii=False, indent=2)
             
             # Also save as a plain text file for heygen
+            title = reel_data.get('title', '')
             heygen_filename = f"final_heygen_{i+1:02d}.txt"
             heygen_path = os.path.join(final_reels_dir, heygen_filename)
             with open(heygen_path, 'w', encoding='utf-8') as f:
@@ -801,26 +786,8 @@ def process_google_doc_to_reels(doc_url: str, output_dir: Optional[str] = None, 
     Returns:
         Dictionary with paths to generated content
     """
-    # Default edit prompt
-    default_edit_prompt = """Убрать: 
-    - Приветствие (добрый день, привет, и т.д.)
-    - Представления эксперта (я Сергей Черненко)
-    - Фразы типа «вот про это мы поговорим в следующем ролике»
-
-    Добавить:
-    - Начать с одного из вариантов цепляющего вступления:
-      * «Это видео для тех, кто...» (например: хочет научиться монтировать, но не знает, с чего начать)
-      * «Это история о том, как...» (например: я сделал вирусное видео, даже не зная, как монтировать)
-      * «А вы знали, что...» (например: можно монтировать видео бесплатно на профессиональном уровне)
-      * «Вряд ли вы мне поверите, но...» (например: раньше я боялся монтировать, потому что думал, что это сложно)
-      * «У меня ушло несколько лет, чтобы...» (например: понять, как сделать видео, которые набирают миллионы просмотров)
-      * Начать со слова «короче» - посыл "сейчас я быстро расскажу"
-      * Использовать фразы с превосходными прилагательными: "Самый классный в мире...", "Самый провальный...", "Самый лучший...", "Самый быстрый...", "Самый неэффективный способ..."
-
-    Сохранить:
-    - Основное образовательное содержание
-    - Ключевые тезисы и рекомендации
-    - Призыв к действию в конце"""
+    # Use edit guidelines from prompts.py
+    edit_prompt = DEFAULT_EDIT_GUIDELINES
     
     # Create output directory if not provided
     if not output_dir:
@@ -850,7 +817,7 @@ def process_google_doc_to_reels(doc_url: str, output_dir: Optional[str] = None, 
         # Step 4: Final reel editing
         final_reels_dir = final_reel_editing(
             top_reels_dir=top_reels_dir,
-            edit_prompt=default_edit_prompt,
+            edit_prompt=edit_prompt,
             api_key=ANTHROPIC_API_KEY
         )
         

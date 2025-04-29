@@ -8,6 +8,8 @@ import anthropic
 import time
 import logging
 from typing import List, Dict, Tuple, Optional
+from .prompts import REEL_GENERATION_PROMPT, REEL_GENERATION_SYSTEM_PROMPT
+from .api_utils import create_claude_client, call_claude_api, RateLimiter, exponential_backoff_retry
 
 # Set up logging
 logging.basicConfig(
@@ -32,9 +34,10 @@ class ReelGenerator:
             output_dir: Directory to save output files
             overlap_paragraphs: Number of paragraphs to include from adjacent sections
         """
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.client = create_claude_client(api_key)
         self.output_dir = output_dir
         self.overlap_paragraphs = overlap_paragraphs
+        self.rate_limiter = RateLimiter(calls_per_minute=10)  # Limit to 10 calls per minute
         
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
@@ -126,6 +129,7 @@ class ReelGenerator:
             
         return enriched_sections
     
+    @exponential_backoff_retry()
     def generate_reel_script(self, section: Dict) -> Dict:
         """Generate an Instagram reel script for a section using Claude.
         
@@ -135,56 +139,25 @@ class ReelGenerator:
         Returns:
             Dictionary with the reel script and metadata
         """
-        prompt = f"""
-You are a skilled Instagram reel script writer. Your task is to transform the following text section into an engaging, 
-informative reel script that educates and resonates with the audience.
-
-ВАЖНО: ВСЕ ОТВЕТЫ ДОЛЖНЫ БЫТЬ НА РУССКОМ ЯЗЫКЕ, включая сценарий, описание, хэштеги и все остальные поля.
-
-SECTION INFORMATION:
-Title: {section["title"]}
-
-MAIN CONTENT TO TRANSFORM:
-{section["content"]}
-
-INSTRUCTIONS:
-1. Create a reel script based on the MAIN CONTENT.
-2. Make the script engaging, concise, and suitable for an Instagram reel (60-90 seconds).
-3. Keep the core message and educational value of the original content.
-4. Use direct, conversational language and include hook and call to action.
-5. The script should sound natural when read aloud.
-6. Each reel should be completely independent and self-contained.
-7. WRITE EVERYTHING IN RUSSIAN LANGUAGE.
-
-REQUIRED OUTPUT FORMAT:
-Your response should be in JSON format with these fields:
-- "heygen_script": The complete script text to be spoken by the avatar in Russian, without any stage directions or formatting
-- "title": A catchy, attention-grabbing title for the reel (40-60 characters) to use in thumbnails
-- "hashtags": 5-7 relevant hashtags in Russian
-- "description": A compelling, informative description that summarizes what the video is about (not just title). This should be a marketing description that makes viewers want to watch (150-200 characters)
-
-Return ONLY valid JSON without any additional explanation.
-"""
+        # Format the prompt with section data
+        formatted_prompt = REEL_GENERATION_PROMPT.format(
+            title=section["title"], 
+            content=section["content"]
+        )
         
         try:
-            response = self.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
-                temperature=0.7,
-                max_tokens=1500,
-                system="You are an expert reel script creator that transforms educational content into engaging, shareable Instagram reels. You always respond with valid JSON. IMPORTANT: You must respond ONLY in Russian language.",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            # Extract content as string from the response
-            result = ""
-            if hasattr(response.content, '__iter__') and not isinstance(response.content, str):
-                for item in response.content:
-                    if hasattr(item, 'text') and item.text:
-                        result += item.text
-            else:
-                result = str(response.content)
+            # Use rate limiter to enforce API limits
+            with self.rate_limiter:
+                logger.info(f"Generating script for section {section['id']}")
+                
+                result = call_claude_api(
+                    client=self.client,
+                    model="claude-3-7-sonnet-20250219",
+                    prompt=formatted_prompt,
+                    system=REEL_GENERATION_SYSTEM_PROMPT,
+                    max_tokens=1500,
+                    temperature=0.7
+                )
             
             # Extract JSON from response
             try:
@@ -245,7 +218,12 @@ Return ONLY valid JSON without any additional explanation.
         """
         processed_sections = []
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Limiting max_workers prevents hitting rate limits too fast
+        # Using a smaller number is safer
+        adjusted_workers = min(max_workers, 4)
+        logger.info(f"Processing sections with {adjusted_workers} workers")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=adjusted_workers) as executor:
             future_to_section = {executor.submit(self.generate_reel_script, section): section for section in sections}
             
             for future in concurrent.futures.as_completed(future_to_section):

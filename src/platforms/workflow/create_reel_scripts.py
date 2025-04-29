@@ -103,42 +103,23 @@ class ReelGenerator:
         return titled_sections
     
     def add_context_to_sections(self, titled_sections: List[Tuple[str, str]]) -> List[Dict]:
-        """Add overlapping context from adjacent sections.
+        """Process sections without adding context from adjacent sections.
         
         Args:
             titled_sections: List of (title, content) tuples
             
         Returns:
-            List of section dicts with context
+            List of section dicts
         """
         enriched_sections = []
         total_sections = len(titled_sections)
         
         for i, (title, content) in enumerate(titled_sections):
-            # Split content into paragraphs
-            paragraphs = re.split(r'\n\s*\n', content)
-            
-            # Get previous section paragraphs for context
-            prev_context = []
-            if i > 0:
-                prev_title, prev_content = titled_sections[i-1]
-                prev_paragraphs = re.split(r'\n\s*\n', prev_content)
-                prev_context = prev_paragraphs[-min(self.overlap_paragraphs, len(prev_paragraphs)):]
-            
-            # Get next section paragraphs for context
-            next_context = []
-            if i < total_sections - 1:
-                next_title, next_content = titled_sections[i+1]
-                next_paragraphs = re.split(r'\n\s*\n', next_content)
-                next_context = next_paragraphs[:min(self.overlap_paragraphs, len(next_paragraphs))]
-            
             section_dict = {
                 "id": i + 1,
                 "title": title,
                 "content": content,
-                "total_sections": total_sections,
-                "previous_context": "\n\n".join(prev_context) if prev_context else "",
-                "next_context": "\n\n".join(next_context) if next_context else ""
+                "total_sections": total_sections
             }
             
             enriched_sections.append(section_dict)
@@ -149,7 +130,7 @@ class ReelGenerator:
         """Generate an Instagram reel script for a section using Claude.
         
         Args:
-            section: Section dict with content and context
+            section: Section dict with content
             
         Returns:
             Dictionary with the reel script and metadata
@@ -162,16 +143,9 @@ informative reel script that educates and resonates with the audience.
 
 SECTION INFORMATION:
 Title: {section["title"]}
-Section {section["id"]} of {section["total_sections"]}
-
-PREVIOUS CONTEXT (for reference only, do not include in the script):
-{section["previous_context"]}
 
 MAIN CONTENT TO TRANSFORM:
 {section["content"]}
-
-NEXT CONTEXT (for reference only, do not include in the script):
-{section["next_context"]}
 
 INSTRUCTIONS:
 1. Create a reel script based on the MAIN CONTENT.
@@ -179,7 +153,7 @@ INSTRUCTIONS:
 3. Keep the core message and educational value of the original content.
 4. Use direct, conversational language and include hook and call to action.
 5. The script should sound natural when read aloud.
-6. Include relevant transitions if this continues from a previous reel or leads to another reel.
+6. Each reel should be completely independent and self-contained.
 7. WRITE EVERYTHING IN RUSSIAN LANGUAGE.
 
 REQUIRED OUTPUT FORMAT:
@@ -194,7 +168,7 @@ Return ONLY valid JSON without any additional explanation.
         
         try:
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20240620",
+                model="claude-3-7-sonnet-20250219",
                 temperature=0.7,
                 max_tokens=1500,
                 system="You are an expert reel script creator that transforms educational content into engaging, shareable Instagram reels. You always respond with valid JSON. IMPORTANT: You must respond ONLY in Russian language.",

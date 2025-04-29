@@ -41,32 +41,33 @@ def analyze_viral_potential(metadata_files: List[Dict[str, Any]], api_key=None) 
     for reel_data in metadata_files:
         # Create a prompt to analyze viral potential
         prompt = f"""
-You are a viral content strategist specializing in quantitative assessment. 
+You are a retention optimization specialist for short-form video content.
 
-Analyze this reel content and rate its viral potential (1-10):
+Analyze this reel content and rate its retention potential (likelihood viewers will watch to the end) on a scale of 1-10:
 
 {reel_data.get('title', 'No title')}
 {reel_data.get('description', 'No description')}
 {reel_data.get('heygen_script', 'No script')}
 Tags: {', '.join(reel_data.get('hashtags', []))}
 
-Frame your analysis around:
-- Emotional resonance and relatability
-- Uniqueness and timeliness
-- Value delivery (educational/entertainment)
-- Audience activation potential
-- Alignment with current platform trends
+Frame your analysis around these retention factors:
+- Hook strength (first 3 seconds grab attention)
+- Story arc (maintains curiosity throughout)
+- Pacing (no slow moments that cause drop-off)
+- Promise fulfillment (delivers on hook's promise)
+- Length optimization (content is tight, no fluff)
+- Call-to-action timing (placed at peak engagement)
 
 Return a JSON object:
 {{
   "score": [1-10 integer],
-  "explanation": [concise justification],
-  "improvement_insight": [one key suggestion]
+  "explanation": [why viewers will/won't stay to the end],
+  "improvement_insight": [specific suggestion to increase retention]
 }}
 """
         try:
             message = client.messages.create(
-                model="claude-3-5-sonnet-20240620",
+                model="claude-3-7-sonnet-20250219",
                 max_tokens=1000,
                 temperature=0,
                 system="You analyze social media content and predict its viral potential. Respond only with JSON.",

@@ -73,7 +73,7 @@ IMPORTANT:
 3. Do not add any introductory text or explanation. Start directly with the original text."""
     
     message = client.messages.create(
-        model="claude-3-5-sonnet-20240620",  # Update with the correct model name if needed
+        model="claude-3-7-sonnet-20250219",  # Update with the correct model name if needed
         max_tokens=8000,
         temperature=0,
         system="You are an AI assistant that analyzes text and divides it into logical topical sections while preserving all original content. Do not add any introductory text or explanation.",

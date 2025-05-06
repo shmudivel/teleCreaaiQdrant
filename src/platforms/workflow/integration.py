@@ -23,7 +23,13 @@ from .analyze_google_doc import extract_doc_id_from_url, get_document_content, a
 from .create_reel_scripts import ReelGenerator
 from .reel_picker import load_metadata_files, analyze_viral_potential, select_top_reels, save_top_reels, get_client
 # Import prompts
-from .prompts import DEFAULT_EDIT_GUIDELINES, HOOK_VARIATIONS, FINAL_EDITING_PROMPT, FINAL_EDITING_SYSTEM_PROMPT
+from .prompts import (
+    DEFAULT_EDIT_GUIDELINES, HOOK_VARIATIONS, CALL_TO_ACTION_VARIATIONS,
+    FINAL_EDITING_PROMPT, FINAL_EDITING_SYSTEM_PROMPT,
+    HEYGEN_OPTIMIZATION_PROMPT, HEYGEN_OPTIMIZATION_SYSTEM_PROMPT,
+    SCRIPT_VALIDATION_PROMPT, SCRIPT_VALIDATION_SYSTEM_PROMPT,
+    NUMBER_CONVERSION_PROMPT, NUMBER_CONVERSION_SYSTEM_PROMPT
+)
 # Import API utilities
 from .api_utils import call_claude_api, RateLimiter, exponential_backoff_retry, create_claude_client
 
@@ -227,7 +233,7 @@ def pick_top_reels(metadata_dir: str, top_n: int = 7, api_key: Optional[str] = N
     return top_reels_dir
 
 @exponential_backoff_retry()
-def edit_reel_script(client, reel_data, edit_prompt, hook_variant, model="claude-3-7-sonnet-20250219"):
+def edit_reel_script(client, reel_data, edit_prompt, hook_variant, call_to_action_variant, model="claude-3-7-sonnet-20250219"):
     """Edit a reel script with retry logic."""
     script = reel_data.get('heygen_script', '')
     title = reel_data.get('title', '')
@@ -237,7 +243,8 @@ def edit_reel_script(client, reel_data, edit_prompt, hook_variant, model="claude
         script=script,
         title=title,
         edit_prompt=edit_prompt,
-        hook_variant=hook_variant
+        hook_variant=hook_variant,
+        call_to_action_variant=call_to_action_variant
     )
     
     result = call_claude_api(
@@ -299,16 +306,21 @@ def final_reel_editing(top_reels_dir: str, edit_prompt: str, api_key: Optional[s
         # Select a random hook variant for each reel
         hook_variant = random.choice(HOOK_VARIATIONS)
         
+        # Select a random call to action variant
+        call_to_action_variant = random.choice(CALL_TO_ACTION_VARIATIONS)
+        
         try:
             # Use rate limiter to prevent hitting API limits
             with rate_limiter:
                 # Call Claude to edit the script
                 logger.info(f"Editing reel {i+1}/{len(metadata_files)}...")
-                edited_script = edit_reel_script(client, reel_data, edit_prompt, hook_variant)
+                edited_script = edit_reel_script(client, reel_data, edit_prompt, hook_variant, call_to_action_variant)
             
             # Update the reel data
             reel_data['original_script'] = reel_data.get('heygen_script', '')
             reel_data['heygen_script'] = edited_script
+            reel_data['hook_variant'] = hook_variant
+            reel_data['call_to_action_variant'] = call_to_action_variant
             
             # Save the edited reel metadata
             output_path = os.path.join(final_reels_dir, f"final_{i+1:02d}_{os.path.basename(reel_data.get('filename', f'reel_{i+1}.json'))}")
@@ -712,6 +724,14 @@ def upload_to_youtube(video_path, title, description, tags=None):
 def process_selected_reel(metadata):
     """Process the selected reel - generate HeyGen video and upload to YouTube."""
     
+    # Ensure we're using the final script with all optimizations applied
+    if 'pre_conversion_script' in metadata:
+        logger.info("Using converted script with numbers as words for optimal HeyGen delivery")
+    elif 'pre_validation_script' in metadata:
+        logger.warning("Using validated script but without number conversion - consider adding number conversion step")
+    elif 'original_script' in metadata:
+        logger.warning("Using only optimized script without validation or number conversion - consider adding these steps")
+    
     # Step 1: Generate HeyGen video
     video_url = generate_heygen_video(metadata)
     if not video_url:
@@ -773,6 +793,352 @@ def process_selected_reel(metadata):
             os.remove(temp_video_path)
             logger.info(f"Removed temporary video file: {temp_video_path}")
 
+@exponential_backoff_retry()
+def optimize_heygen_script(client, script, model="claude-3-7-sonnet-20250219"):
+    """Optimize a script for natural delivery by HeyGen avatar, with retry logic.
+    
+    Args:
+        client: Anthropic client
+        script: The script to optimize
+        model: Claude model to use
+        
+    Returns:
+        Optimized script with SSML tags and improved pacing
+    """
+    # Format the prompt
+    user_prompt = HEYGEN_OPTIMIZATION_PROMPT.format(script=script)
+    
+    result = call_claude_api(
+        client=client,
+        model=model,
+        prompt=user_prompt,
+        system=HEYGEN_OPTIMIZATION_SYSTEM_PROMPT,
+        max_tokens=2000,
+        temperature=0.4
+    )
+    
+    return result.strip()
+
+def optimize_heygen_scripts(final_reels_dir: str, api_key: Optional[str] = None) -> str:
+    """Optimize scripts for natural delivery by HeyGen avatar.
+    
+    Args:
+        final_reels_dir: Directory containing edited reel scripts
+        api_key: Anthropic API key (optional)
+    
+    Returns:
+        Path to the directory with optimized scripts
+    """
+    logger.info("Step 5: HeyGen script optimization")
+    
+    # Use environment variable if not provided
+    if not api_key:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    
+    # Get Anthropic client
+    client = create_claude_client(api_key)
+    
+    # Define output directory
+    parent_dir = os.path.dirname(final_reels_dir)
+    optimized_dir = os.path.join(parent_dir, "optimized_scripts")
+    
+    # Create output directory path
+    Path(optimized_dir).mkdir(parents=True, exist_ok=True)
+    
+    # Create rate limiter to avoid hitting API limits
+    rate_limiter = RateLimiter(calls_per_minute=10)
+    
+    # Load reel data
+    logger.info(f"Loading final reels from {final_reels_dir}...")
+    reels_data = []
+    for filename in os.listdir(final_reels_dir):
+        if filename.endswith('.json') and filename.startswith('final_'):
+            file_path = os.path.join(final_reels_dir, filename)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    reels_data.append({
+                        'data': data,
+                        'filename': filename
+                    })
+                    logger.info(f"Loaded {filename}")
+            except Exception as e:
+                logger.error(f"Error loading {filename}: {e}")
+    
+    for i, reel_item in enumerate(reels_data):
+        reel_data = reel_item['data']
+        script = reel_data.get('heygen_script', '')
+        title = reel_data.get('title', '')
+        
+        try:
+            # Use rate limiter to prevent hitting API limits
+            with rate_limiter:
+                # Optimize script for HeyGen
+                logger.info(f"Optimizing script {i+1}/{len(reels_data)} for HeyGen...")
+                optimized_script = optimize_heygen_script(client, script)
+            
+            # Create a clean output with only necessary fields
+            optimized_data = {
+                'heygen_script': optimized_script,
+                'title': title
+            }
+            
+            # Copy other essential fields except scripts
+            for key in ['hashtags', 'description']:
+                if key in reel_data:
+                    optimized_data[key] = reel_data[key]
+            
+            # Save the optimized reel metadata
+            output_path = os.path.join(optimized_dir, f"optimized_{os.path.basename(reel_item['filename'])}")
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(optimized_data, f, ensure_ascii=False, indent=2)
+            
+            # Also save as a plain text file for HeyGen
+            heygen_filename = f"optimized_heygen_{i+1:02d}.txt"
+            heygen_path = os.path.join(optimized_dir, heygen_filename)
+            with open(heygen_path, 'w', encoding='utf-8') as f:
+                f.write(f"# {title}\n\n{optimized_script}")
+            
+            logger.info(f"Saved optimized script to {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Error optimizing script {i+1}: {str(e)}")
+    
+    logger.info(f"Script optimization completed. Optimized scripts saved to: {optimized_dir}")
+    return optimized_dir
+
+@exponential_backoff_retry()
+def validate_heygen_script(client, script_data, model="claude-3-7-sonnet-20250219"):
+    """Validate and fix a HeyGen script if it doesn't comply with rules.
+    
+    Args:
+        client: Anthropic client
+        script_data: Dictionary containing script data ('heygen_script', 'title')
+        model: Claude model to use
+        
+    Returns:
+        Fixed script that complies with HeyGen rules
+    """
+    script = script_data.get('heygen_script', '')
+    title = script_data.get('title', '')
+    
+    # Format the prompt with top 10 hook examples
+    hook_examples = "\n".join(HOOK_VARIATIONS[:10])
+    user_prompt = SCRIPT_VALIDATION_PROMPT.format(
+        hook_examples=hook_examples,
+        title=title,
+        script=script
+    )
+    
+    result = call_claude_api(
+        client=client,
+        model=model,
+        prompt=user_prompt,
+        system=SCRIPT_VALIDATION_SYSTEM_PROMPT,
+        max_tokens=2000,
+        temperature=0.3
+    )
+    
+    return result.strip()
+
+def validate_heygen_scripts(optimized_dir: str, api_key: Optional[str] = None) -> str:
+    """Validate and fix optimized scripts to ensure they comply with HeyGen rules.
+    
+    Args:
+        optimized_dir: Directory containing optimized scripts
+        api_key: Anthropic API key (optional)
+    
+    Returns:
+        Path to the directory with validated scripts
+    """
+    logger.info("Step 6: HeyGen script validation and fixing")
+    
+    # Use environment variable if not provided
+    if not api_key:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    
+    # Get Anthropic client
+    client = create_claude_client(api_key)
+    
+    # Define output directory
+    parent_dir = os.path.dirname(optimized_dir)
+    validated_dir = os.path.join(parent_dir, "validated_scripts")
+    
+    # Create output directory path
+    Path(validated_dir).mkdir(parents=True, exist_ok=True)
+    
+    # Create rate limiter to avoid hitting API limits
+    rate_limiter = RateLimiter(calls_per_minute=10)
+    
+    # Load optimized reel data
+    logger.info(f"Loading optimized scripts from {optimized_dir}...")
+    reels_data = []
+    for filename in os.listdir(optimized_dir):
+        if filename.endswith('.json') and filename.startswith('optimized_'):
+            file_path = os.path.join(optimized_dir, filename)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    reels_data.append({
+                        'data': data,
+                        'filename': filename
+                    })
+                    logger.info(f"Loaded {filename}")
+            except Exception as e:
+                logger.error(f"Error loading {filename}: {e}")
+    
+    for i, reel_item in enumerate(reels_data):
+        reel_data = reel_item['data']
+        
+        try:
+            # Use rate limiter to prevent hitting API limits
+            with rate_limiter:
+                # Validate and fix the script
+                logger.info(f"Validating script {i+1}/{len(reels_data)}...")
+                validated_script = validate_heygen_script(client, reel_data)
+            
+            # Create output data
+            validated_data = reel_data.copy()
+            
+            # Save original script before validation
+            validated_data['pre_validation_script'] = reel_data.get('heygen_script', '')
+            
+            # Update with validated script
+            validated_data['heygen_script'] = validated_script
+            
+            # Save the validated data
+            output_path = os.path.join(validated_dir, f"validated_{os.path.basename(reel_item['filename']).replace('optimized_', '')}")
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(validated_data, f, ensure_ascii=False, indent=2)
+            
+            # Also save as plain text for easy use with HeyGen
+            title = reel_data.get('title', '')
+            heygen_filename = f"validated_heygen_{i+1:02d}.txt"
+            heygen_path = os.path.join(validated_dir, heygen_filename)
+            with open(heygen_path, 'w', encoding='utf-8') as f:
+                f.write(f"# {title}\n\n{validated_script}")
+            
+            logger.info(f"Saved validated script to {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Error validating script {i+1}: {str(e)}")
+    
+    logger.info(f"Script validation completed. Validated scripts saved to: {validated_dir}")
+    return validated_dir
+
+@exponential_backoff_retry()
+def convert_numbers_to_words(client, script_data, model="claude-3-7-sonnet-20250219"):
+    """Convert all numbers in a script to their word representation in Russian.
+    
+    Args:
+        client: Anthropic client
+        script_data: Dictionary containing script data ('heygen_script', 'title')
+        model: Claude model to use
+        
+    Returns:
+        Script with all numbers converted to words
+    """
+    script = script_data.get('heygen_script', '')
+    
+    # Format the prompt with the script
+    user_prompt = NUMBER_CONVERSION_PROMPT.format(script=script)
+    
+    result = call_claude_api(
+        client=client,
+        model=model,
+        prompt=user_prompt,
+        system=NUMBER_CONVERSION_SYSTEM_PROMPT,
+        max_tokens=2000,
+        temperature=0.3
+    )
+    
+    return result.strip()
+
+def convert_all_numbers_to_words(validated_dir: str, api_key: Optional[str] = None) -> str:
+    """Convert all numbers to words in validated scripts.
+    
+    Args:
+        validated_dir: Directory containing validated scripts
+        api_key: Anthropic API key (optional)
+    
+    Returns:
+        Path to the directory with number-converted scripts
+    """
+    logger.info("Step 7: Converting numbers to words in scripts")
+    
+    # Use environment variable if not provided
+    if not api_key:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    
+    # Get Anthropic client
+    client = create_claude_client(api_key)
+    
+    # Define output directory
+    parent_dir = os.path.dirname(validated_dir)
+    converted_dir = os.path.join(parent_dir, "converted_scripts")
+    
+    # Create output directory path
+    Path(converted_dir).mkdir(parents=True, exist_ok=True)
+    
+    # Create rate limiter to avoid hitting API limits
+    rate_limiter = RateLimiter(calls_per_minute=10)
+    
+    # Load validated reel data
+    logger.info(f"Loading validated scripts from {validated_dir}...")
+    reels_data = []
+    for filename in os.listdir(validated_dir):
+        if filename.endswith('.json') and filename.startswith('validated_'):
+            file_path = os.path.join(validated_dir, filename)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    reels_data.append({
+                        'data': data,
+                        'filename': filename
+                    })
+                    logger.info(f"Loaded {filename}")
+            except Exception as e:
+                logger.error(f"Error loading {filename}: {e}")
+    
+    for i, reel_item in enumerate(reels_data):
+        reel_data = reel_item['data']
+        
+        try:
+            # Use rate limiter to prevent hitting API limits
+            with rate_limiter:
+                # Convert numbers to words
+                logger.info(f"Converting numbers in script {i+1}/{len(reels_data)}...")
+                converted_script = convert_numbers_to_words(client, reel_data)
+            
+            # Create output data
+            converted_data = reel_data.copy()
+            
+            # Save pre-conversion script
+            converted_data['pre_conversion_script'] = reel_data.get('heygen_script', '')
+            
+            # Update with converted script
+            converted_data['heygen_script'] = converted_script
+            
+            # Save the converted data
+            output_path = os.path.join(converted_dir, f"converted_{os.path.basename(reel_item['filename']).replace('validated_', '')}")
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(converted_data, f, ensure_ascii=False, indent=2)
+            
+            # Also save as plain text for easy use with HeyGen
+            title = reel_data.get('title', '')
+            heygen_filename = f"converted_heygen_{i+1:02d}.txt"
+            heygen_path = os.path.join(converted_dir, heygen_filename)
+            with open(heygen_path, 'w', encoding='utf-8') as f:
+                f.write(f"# {title}\n\n{converted_script}")
+            
+            logger.info(f"Saved converted script to {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Error converting numbers in script {i+1}: {str(e)}")
+    
+    logger.info(f"Number conversion completed. Converted scripts saved to: {converted_dir}")
+    return converted_dir
+
 def process_google_doc_to_reels(doc_url: str, output_dir: Optional[str] = None, top_n: int = 7) -> Dict[str, str]:
     """Process a Google Doc and convert it to reels.
     
@@ -821,12 +1187,33 @@ def process_google_doc_to_reels(doc_url: str, output_dir: Optional[str] = None, 
             api_key=ANTHROPIC_API_KEY
         )
         
+        # Step 5: Optimize scripts for HeyGen
+        optimized_dir = optimize_heygen_scripts(
+            final_reels_dir=final_reels_dir,
+            api_key=ANTHROPIC_API_KEY
+        )
+        
+        # Step 6: Validate and fix scripts
+        validated_dir = validate_heygen_scripts(
+            optimized_dir=optimized_dir,
+            api_key=ANTHROPIC_API_KEY
+        )
+        
+        # Step 7: Convert numbers to words
+        converted_dir = convert_all_numbers_to_words(
+            validated_dir=validated_dir,
+            api_key=ANTHROPIC_API_KEY
+        )
+        
         # Return paths to various directories for reference
         return {
             "analyzed_doc": analyzed_doc_path,
             "metadata_dir": metadata_dir,
             "top_reels_dir": top_reels_dir,
-            "final_reels_dir": final_reels_dir
+            "final_reels_dir": final_reels_dir,
+            "optimized_dir": optimized_dir,
+            "validated_dir": validated_dir,
+            "converted_dir": converted_dir
         }
     
     except Exception as e:

@@ -4,6 +4,7 @@ import json
 import logging
 import random
 import requests
+import re  # Add re module for regex operations
 import time
 import tempfile
 import io
@@ -794,6 +795,37 @@ def process_selected_reel(metadata):
             logger.info(f"Removed temporary video file: {temp_video_path}")
 
 @exponential_backoff_retry()
+def convert_numbers_to_words(client, script_data, model="claude-3-7-sonnet-20250219"):
+    """Convert all numbers in a script to their word representation in Russian.
+    
+    Args:
+        client: Anthropic client
+        script_data: Dictionary containing script data ('heygen_script', 'title')
+        model: Claude model to use
+        
+    Returns:
+        Script with all numbers converted to words
+    """
+    script = script_data.get('heygen_script', '')
+    
+    # Format the prompt with the script
+    user_prompt = NUMBER_CONVERSION_PROMPT.format(script=script)
+    
+    result = call_claude_api(
+        client=client,
+        model=model,
+        prompt=user_prompt,
+        system=NUMBER_CONVERSION_SYSTEM_PROMPT,
+        max_tokens=2000,
+        temperature=0.3
+    )
+    
+    # Just do basic stripping - final formatting will be done in optimize_heygen_script
+    result = result.strip()
+    
+    return result
+
+@exponential_backoff_retry()
 def optimize_heygen_script(client, script, model="claude-3-7-sonnet-20250219"):
     """Optimize a script for natural delivery by HeyGen avatar, with retry logic.
     
@@ -817,7 +849,20 @@ def optimize_heygen_script(client, script, model="claude-3-7-sonnet-20250219"):
         temperature=0.4
     )
     
-    return result.strip()
+    # Final formatting fixes
+    # Remove all newline characters for consistent spacing
+    result = result.strip().replace('\n', '')
+    
+    # Fix 11labs compatibility issues - THIS IS THE FINAL FORMATTING FIX
+    
+    # 1. Replace escaped quotes in break tags with regular quotes
+    result = re.sub(r'<break time=\\"([0-9.]+s)\\"/>', r'<break time="\1"/>', result)
+    result = re.sub(r'<break time=\"([0-9.]+s)\"/>', r'<break time="\1"/>', result)
+    
+    # 2. Add additional break tags after CAM-2, CAM-3, and CAM-4 (not CAM-1)
+    result = re.sub(r'(<!-- CAM‑([2-4]) -->)<speak>', r'\1<speak><break time="3s"/><break time="2s"/>', result)
+    
+    return result
 
 def optimize_heygen_scripts(final_reels_dir: str, api_key: Optional[str] = None) -> str:
     """Optimize scripts for natural delivery by HeyGen avatar.
@@ -829,7 +874,7 @@ def optimize_heygen_scripts(final_reels_dir: str, api_key: Optional[str] = None)
     Returns:
         Path to the directory with optimized scripts
     """
-    logger.info("Step 5: HeyGen script optimization")
+    logger.info("Step 7: HeyGen script optimization")
     
     # Use environment variable if not provided
     if not api_key:
@@ -849,10 +894,13 @@ def optimize_heygen_scripts(final_reels_dir: str, api_key: Optional[str] = None)
     rate_limiter = RateLimiter(calls_per_minute=10)
     
     # Load reel data
-    logger.info(f"Loading final reels from {final_reels_dir}...")
+    logger.info(f"Loading scripts from {final_reels_dir}...")
     reels_data = []
     for filename in os.listdir(final_reels_dir):
-        if filename.endswith('.json') and filename.startswith('final_'):
+        # Modified to handle different prefixes (final_, validated_, or converted_)
+        if filename.endswith('.json') and (filename.startswith('final_') or 
+                                         filename.startswith('validated_') or 
+                                         filename.startswith('converted_')):
             file_path = os.path.join(final_reels_dir, filename)
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -888,8 +936,16 @@ def optimize_heygen_scripts(final_reels_dir: str, api_key: Optional[str] = None)
                 if key in reel_data:
                     optimized_data[key] = reel_data[key]
             
+            # Determine output filename
+            if reel_item['filename'].startswith('final_'):
+                base_name = os.path.basename(reel_item['filename'])
+            elif reel_item['filename'].startswith('validated_'):
+                base_name = os.path.basename(reel_item['filename']).replace('validated_', '')
+            else:  # converted_
+                base_name = os.path.basename(reel_item['filename']).replace('converted_', '')
+                
             # Save the optimized reel metadata
-            output_path = os.path.join(optimized_dir, f"optimized_{os.path.basename(reel_item['filename'])}")
+            output_path = os.path.join(optimized_dir, f"optimized_{base_name}")
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(optimized_data, f, ensure_ascii=False, indent=2)
             
@@ -971,10 +1027,11 @@ def validate_heygen_scripts(optimized_dir: str, api_key: Optional[str] = None) -
     rate_limiter = RateLimiter(calls_per_minute=10)
     
     # Load optimized reel data
-    logger.info(f"Loading optimized scripts from {optimized_dir}...")
+    logger.info(f"Loading scripts from {optimized_dir}...")
     reels_data = []
     for filename in os.listdir(optimized_dir):
-        if filename.endswith('.json') and filename.startswith('optimized_'):
+        # Modified to handle both "optimized_" and "final_" prefixes
+        if filename.endswith('.json') and (filename.startswith('optimized_') or filename.startswith('final_')):
             file_path = os.path.join(optimized_dir, filename)
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -1006,8 +1063,14 @@ def validate_heygen_scripts(optimized_dir: str, api_key: Optional[str] = None) -
             # Update with validated script
             validated_data['heygen_script'] = validated_script
             
+            # Determine output filename
+            if reel_item['filename'].startswith('optimized_'):
+                output_filename = f"validated_{os.path.basename(reel_item['filename']).replace('optimized_', '')}"
+            else:
+                output_filename = f"validated_{os.path.basename(reel_item['filename']).replace('final_', '')}"
+            
             # Save the validated data
-            output_path = os.path.join(validated_dir, f"validated_{os.path.basename(reel_item['filename']).replace('optimized_', '')}")
+            output_path = os.path.join(validated_dir, output_filename)
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(validated_data, f, ensure_ascii=False, indent=2)
             
@@ -1026,34 +1089,6 @@ def validate_heygen_scripts(optimized_dir: str, api_key: Optional[str] = None) -
     logger.info(f"Script validation completed. Validated scripts saved to: {validated_dir}")
     return validated_dir
 
-@exponential_backoff_retry()
-def convert_numbers_to_words(client, script_data, model="claude-3-7-sonnet-20250219"):
-    """Convert all numbers in a script to their word representation in Russian.
-    
-    Args:
-        client: Anthropic client
-        script_data: Dictionary containing script data ('heygen_script', 'title')
-        model: Claude model to use
-        
-    Returns:
-        Script with all numbers converted to words
-    """
-    script = script_data.get('heygen_script', '')
-    
-    # Format the prompt with the script
-    user_prompt = NUMBER_CONVERSION_PROMPT.format(script=script)
-    
-    result = call_claude_api(
-        client=client,
-        model=model,
-        prompt=user_prompt,
-        system=NUMBER_CONVERSION_SYSTEM_PROMPT,
-        max_tokens=2000,
-        temperature=0.3
-    )
-    
-    return result.strip()
-
 def convert_all_numbers_to_words(validated_dir: str, api_key: Optional[str] = None) -> str:
     """Convert all numbers to words in validated scripts.
     
@@ -1064,7 +1099,7 @@ def convert_all_numbers_to_words(validated_dir: str, api_key: Optional[str] = No
     Returns:
         Path to the directory with number-converted scripts
     """
-    logger.info("Step 7: Converting numbers to words in scripts")
+    logger.info("Step 6: Converting numbers to words in scripts")
     
     # Use environment variable if not provided
     if not api_key:
@@ -1084,10 +1119,11 @@ def convert_all_numbers_to_words(validated_dir: str, api_key: Optional[str] = No
     rate_limiter = RateLimiter(calls_per_minute=10)
     
     # Load validated reel data
-    logger.info(f"Loading validated scripts from {validated_dir}...")
+    logger.info(f"Loading scripts from {validated_dir}...")
     reels_data = []
     for filename in os.listdir(validated_dir):
-        if filename.endswith('.json') and filename.startswith('validated_'):
+        # Modified to handle files with validated_ and other prefixes
+        if filename.endswith('.json'):
             file_path = os.path.join(validated_dir, filename)
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -1119,8 +1155,15 @@ def convert_all_numbers_to_words(validated_dir: str, api_key: Optional[str] = No
             # Update with converted script
             converted_data['heygen_script'] = converted_script
             
+            # Determine the output filename based on the input filename
+            if reel_item['filename'].startswith('validated_'):
+                output_filename = f"converted_{os.path.basename(reel_item['filename']).replace('validated_', '')}"
+            else:
+                # If not a validated_ file, preserve the original name with converted_ prefix
+                output_filename = f"converted_{os.path.basename(reel_item['filename'])}"
+            
             # Save the converted data
-            output_path = os.path.join(converted_dir, f"converted_{os.path.basename(reel_item['filename']).replace('validated_', '')}")
+            output_path = os.path.join(converted_dir, output_filename)
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(converted_data, f, ensure_ascii=False, indent=2)
             
@@ -1187,21 +1230,21 @@ def process_google_doc_to_reels(doc_url: str, output_dir: Optional[str] = None, 
             api_key=ANTHROPIC_API_KEY
         )
         
-        # Step 5: Optimize scripts for HeyGen
-        optimized_dir = optimize_heygen_scripts(
-            final_reels_dir=final_reels_dir,
-            api_key=ANTHROPIC_API_KEY
-        )
-        
-        # Step 6: Validate and fix scripts
+        # Step 5: Validate and fix scripts
         validated_dir = validate_heygen_scripts(
-            optimized_dir=optimized_dir,
+            optimized_dir=final_reels_dir,
             api_key=ANTHROPIC_API_KEY
         )
         
-        # Step 7: Convert numbers to words
+        # Step 6: Convert numbers to words
         converted_dir = convert_all_numbers_to_words(
             validated_dir=validated_dir,
+            api_key=ANTHROPIC_API_KEY
+        )
+        
+        # Step 7: Optimize scripts for HeyGen (now the last step)
+        optimized_dir = optimize_heygen_scripts(
+            final_reels_dir=converted_dir,
             api_key=ANTHROPIC_API_KEY
         )
         
@@ -1211,9 +1254,9 @@ def process_google_doc_to_reels(doc_url: str, output_dir: Optional[str] = None, 
             "metadata_dir": metadata_dir,
             "top_reels_dir": top_reels_dir,
             "final_reels_dir": final_reels_dir,
-            "optimized_dir": optimized_dir,
             "validated_dir": validated_dir,
-            "converted_dir": converted_dir
+            "converted_dir": converted_dir,
+            "optimized_dir": optimized_dir
         }
     
     except Exception as e:

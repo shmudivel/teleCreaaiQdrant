@@ -8,9 +8,11 @@ This module contains a complete workflow for transforming a Google Doc document 
 2. **Reel Script Generation** - Converts each section into an engaging Instagram reel script 
 3. **Viral Potential Analysis** - Analyzes each script for viral potential and selects the top ones
 4. **Final Reel Editing** - Applies engagement improvements with hooks and narrative structure
-5. **HeyGen Script Optimization** - Optimizes scripts for natural delivery by the AI avatar (adds SSML tags)
-6. **Video Generation** - Creates videos using the HeyGen API with an AI avatar
-7. **Publishing** - Uploads videos to Google Drive and/or YouTube
+5. **Script Validation** - Validates scripts to ensure they comply with requirements
+6. **Number Conversion** - Converts numbers to words for better voice delivery
+7. **HeyGen Script Optimization** - Optimizes scripts for natural delivery by the AI avatar (adds SSML tags)
+8. **Video Generation** - Creates videos using the HeyGen API with an AI avatar
+9. **Publishing** - Uploads videos to Google Drive and/or YouTube
 
 ## File Structure
 
@@ -34,9 +36,9 @@ All prompts used in the workflow are centralized in `prompts.py` and follow this
 4. **FINAL_EDITING_PROMPT** - Used in `integration.py` to apply final engagement improvements
 5. **DEFAULT_EDIT_GUIDELINES** - Rules for improving reel engagement
 6. **HOOK_VARIATIONS** - Different hook styles to use in final editing
-7. **HEYGEN_OPTIMIZATION_PROMPT** - Used in `integration.py` to optimize scripts for natural voice delivery
-8. **SCRIPT_VALIDATION_PROMPT** - Used in `integration.py` to validate and fix scripts for HeyGen
-9. **NUMBER_CONVERSION_PROMPT** - Used in `integration.py` to convert numbers to their word representation
+7. **SCRIPT_VALIDATION_PROMPT** - Used in `integration.py` to validate and fix scripts for HeyGen
+8. **NUMBER_CONVERSION_PROMPT** - Used in `integration.py` to convert numbers to their word representation
+9. **HEYGEN_OPTIMIZATION_PROMPT** - Used in `integration.py` to optimize scripts for natural voice delivery
 
 This centralized organization makes it easy to modify the prompts without changing multiple files.
 

@@ -1,0 +1,6 @@
+{
+  "heygen_script": "<!-- CAM‑1 --><speak>This is the first camera angle with a <break time=\"0.5s\"/> pause here.</speak><!-- CAM‑2 --><speak><break time=\"3s\"/><break time=\"2s\"/>This is the second camera angle that should get extra breaks added before this text.</speak><!-- CAM-3 --><speak><break time=\"3s\"/><break time=\"2s\"/>This is the third camera angle with a regular hyphen instead of em-dash.</speak><!--CAM‑4--><speak><break time=\"3s\"/><break time=\"2s\"/>This is the fourth camera angle with no spaces in the comment.</speak>",
+  "title": "Test Script for Camera Marker Processing",
+  "hashtags": "#test #camera #formatting",
+  "description": "A sample script to test the improved formatting code"
+}

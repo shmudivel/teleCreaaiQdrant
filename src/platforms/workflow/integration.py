@@ -8,6 +8,7 @@ import re  # Add re module for regex operations
 import time
 import tempfile
 import io
+import shutil  # Added for copying file streams
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -48,6 +49,73 @@ HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "NzYzODNmNTI5ODYyNGMyYTg1NzFhN
 YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "REMOVED_GOOGLE_CLIENT_ID")
 YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "REMOVED_GOOGLE_CLIENT_SECRET")
 TOKEN_FILE = "youtube_token.json"
+# Add ElevenLabs constants
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID")
+
+def generate_audio_with_elevenlabs(script_text: str, output_dir: str, reel_title: str) -> Optional[str]:
+    """
+    Generates audio from script text using ElevenLabs API and saves it to a file.
+
+    Args:
+        script_text: The text (SSML-enhanced) to convert to speech.
+        output_dir: The directory to save the generated audio file.
+        reel_title: The title of the reel, used for naming the audio file.
+
+    Returns:
+        The path to the generated audio file, or None if generation failed.
+    """
+    logger.info(f"Attempting to generate audio with ElevenLabs for: {reel_title}")
+
+    if not ELEVENLABS_API_KEY:
+        logger.error("ELEVENLABS_API_KEY not found in environment variables.")
+        return None
+    if not ELEVENLABS_VOICE_ID:
+        logger.error("ELEVENLABS_VOICE_ID not found in environment variables.")
+        return None
+
+    tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+    
+    headers = {
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVENLABS_API_KEY
+    }
+    
+    data = {
+        "text": script_text,
+        "model_id": "eleven_multilingual_v2", # This model supports SSML
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75
+        }
+    }
+    
+    try:
+        response = requests.post(tts_url, json=data, headers=headers, stream=True, timeout=300) # Added timeout
+
+        if response.status_code == 200:
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            # Sanitize reel_title for filename and limit length
+            safe_title = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in reel_title).rstrip()
+            safe_title = safe_title.replace(' ', '_')[:50] # Limit length after sanitizing
+            
+            audio_filename = f"elevenlabs_audio_{safe_title}_{int(time.time())}.mp3"
+            audio_path = os.path.join(output_dir, audio_filename)
+            
+            with open(audio_path, 'wb') as f:
+                shutil.copyfileobj(response.raw, f)
+            logger.info(f"Successfully generated ElevenLabs audio and saved to {audio_path}")
+            return audio_path
+        else:
+            logger.error(f"ElevenLabs API request failed with status {response.status_code}: {response.text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"ElevenLabs API request error: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during ElevenLabs audio generation: {e}")
+        return None
 
 def process_google_doc(url: str, service_account_file: str) -> str:
     """Process a Google Doc and divide it into sections.

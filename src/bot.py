@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler, ConversationHandler
 import os
 from dotenv import load_dotenv
@@ -8,6 +8,7 @@ import asyncio
 import sys
 import traceback
 import html
+from pathlib import Path
 
 # Add the current directory to the Python path to enable imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1069,53 +1070,72 @@ async def process_google_doc_for_youtube(update: Update, context: ContextTypes.D
         
         # Process completed
         if result:
-            final_reels_dir = result.get("final_reels_dir", "")
+            # Get the optimized scripts directory instead of final reels directory
+            optimized_dir = result.get("optimized_dir", "")
             
             # Create success message
             success_message = (
                 "✅ Обработка документа завершена успешно!\n\n"
-                f"📂 Видеоролики сохранены в: {final_reels_dir}\n\n"
+                f"📂 Оптимизированные скрипты сохранены в: {optimized_dir}\n\n"
                 "Процесс создал следующие материалы:\n"
                 "1. Проанализированный документ\n"
                 "2. Сценарии для коротких видео\n"
                 "3. Отобраны самые потенциально вирусные ролики\n"
-                "4. Финальные отредактированные видеосценарии"
+                "4. Финальные отредактированные и оптимизированные сценарии с SSML тегами"
             )
             
             # Update the processing message
             await processing_message.edit_text(success_message)
             
-            # Load the top reels to present for selection
+            # Load the optimized reels to present for selection
             try:
                 import os
                 import json
                 
+                # Use optimized directory as the source for reels
+                reels_source_dir = optimized_dir
+                
+                # Verify directory exists
+                if not os.path.exists(reels_source_dir):
+                    raise FileNotFoundError(f"Directory not found: {reels_source_dir}")
+                
                 # Create a list to store reel information
                 reels = []
                 
-                # Load all final reel JSON files
-                for filename in os.listdir(final_reels_dir):
-                    if filename.endswith('.json') and filename.startswith('final_'):
-                        file_path = os.path.join(final_reels_dir, filename)
+                # Load all optimized reel JSON files
+                for filename in os.listdir(reels_source_dir):
+                    if filename.endswith('.json') and filename.startswith('optimized_'):
+                        file_path = os.path.join(reels_source_dir, filename)
                         try:
                             with open(file_path, 'r', encoding='utf-8') as f:
                                 data = json.load(f)
-                                reels.append({
-                                    'path': file_path,
-                                    'data': data,
-                                    'filename': filename
-                                })
+                                # Ensure the loaded JSON has the required heygen_script
+                                if 'heygen_script' in data:
+                                    reels.append({
+                                        'path': file_path,
+                                        'data': data,
+                                        'filename': filename
+                                    })
+                                else:
+                                    logger.warning(f"Skipping {filename}: missing 'heygen_script' key")
                         except Exception as e:
                             logger.error(f"Error loading {filename}: {e}")
                 
-                # Sort reels by index in filename
-                reels.sort(key=lambda x: int(os.path.basename(x['path']).split('_')[1]))
+                # Sort reels by index in filename (try to extract number after first underscore)
+                try:
+                    reels.sort(key=lambda x: int(os.path.basename(x['filename']).split('_')[1]))
+                except (IndexError, ValueError):
+                    # Fallback if filename format is different
+                    logger.warning("Could not sort reels by index, using filename order instead")
+                    reels.sort(key=lambda x: x['filename'])
                 
                 # Check if we have reels to display
                 if reels:
                     # Store reels in user_data for callback handling
                     context.user_data['reels'] = reels
-                    context.user_data['final_reels_dir'] = final_reels_dir
+                    # Store both keys for backward compatibility
+                    context.user_data['reels_source_dir'] = reels_source_dir
+                    context.user_data['final_reels_dir'] = reels_source_dir  # for backward compatibility
                     
                     # Create inline buttons for each reel
                     keyboard = []
@@ -1131,25 +1151,25 @@ async def process_google_doc_for_youtube(update: Update, context: ContextTypes.D
                     
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     await update.message.reply_text(
-                        "Выберите ролик для генерации в HeyGen и загрузки на YouTube:",
+                        "Выберите оптимизированный сценарий для генерации аудио, а затем видео в HeyGen:",
                         reply_markup=reply_markup
                     )
                 else:
                     # No reels found
                     await update.message.reply_text(
-                        "❌ Не найдено ни одного готового ролика в указанной директории.",
+                        "❌ Не найдено ни одного оптимизированного сценария в указанной директории.",
                         reply_markup=InlineKeyboardMarkup([[
                             InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
                         ]])
                     )
             except Exception as e:
-                logger.error(f"Error loading reels for selection: {str(e)}")
+                logger.error(f"Error loading optimized scripts for selection: {str(e)}")
                 # Show menu button as fallback
                 keyboard = [
                     [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text("Произошла ошибка при загрузке роликов.", reply_markup=reply_markup)
+                await update.message.reply_text(f"Произошла ошибка при загрузке оптимизированных сценариев: {str(e)}", reply_markup=reply_markup)
         else:
             # Error occurred
             await processing_message.edit_text(
@@ -1175,7 +1195,8 @@ async def handle_reel_selection(update: Update, context: ContextTypes.DEFAULT_TY
         
         # Get the reels list from user_data
         reels = context.user_data.get('reels', [])
-        
+        final_reels_dir = context.user_data.get('final_reels_dir')
+
         if not reels or reel_idx >= len(reels):
             await query.edit_message_text(
                 "❌ Выбранный ролик не найден. Пожалуйста, попробуйте снова.",
@@ -1184,15 +1205,135 @@ async def handle_reel_selection(update: Update, context: ContextTypes.DEFAULT_TY
                 ]])
             )
             return
-        
+
+        if not final_reels_dir:
+            logger.error("final_reels_dir not found in user_data for audio generation.")
+            await query.edit_message_text(
+                "❌ Ошибка: не удалось определить директорию для аудиофайла. Пожалуйста, попробуйте снова.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return
+
         # Get the selected reel metadata
-        selected_reel = reels[reel_idx]['data']
-        title = selected_reel.get('title', 'Без названия')
+        selected_reel_metadata = reels[reel_idx]['data']
+        title = selected_reel_metadata.get('title', 'Без названия')
+        heygen_script = selected_reel_metadata.get('heygen_script', '')
+
+        if not heygen_script:
+            logger.error(f"No heygen_script found for reel: {title}")
+            await query.edit_message_text(
+                f"❌ Ошибка: отсутствует оптимизированный скрипт для ролика '{title}'. Невозможно сгенерировать аудио.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return
         
-        # Update the message to show processing status
-        processing_message = await query.edit_message_text(
-            f"⏳ Обрабатываю выбранный ролик: {title}\n\n"
-            "Идет генерация видео в HeyGen и загрузка на YouTube. Это может занять несколько минут..."
+        # Update the message to show audio generation status
+        await query.edit_message_text(f"⏳ Генерирую аудио превью для '{title}' с помощью ElevenLabs...")
+
+        # Create audio_previews directory
+        audio_preview_dir = os.path.join(final_reels_dir, "audio_previews")
+        Path(audio_preview_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Import the generate_audio_with_elevenlabs function
+        from src.platforms.workflow.integration import generate_audio_with_elevenlabs
+        
+        # Generate audio with ElevenLabs
+        loop = asyncio.get_event_loop()
+        audio_file_path = await loop.run_in_executor(
+            None,
+            generate_audio_with_elevenlabs,
+            heygen_script,
+            audio_preview_dir,
+            title
+        )
+
+        if audio_file_path:
+            # Store selected reel and audio path in context.user_data
+            context.user_data['selected_reel_for_heygen'] = selected_reel_metadata
+            context.user_data['generated_audio_path'] = audio_file_path
+            
+            # Create keyboard with confirmation buttons
+            keyboard = [
+                [InlineKeyboardButton("🚀 К генерации HeyGen видео", callback_data="heygen_proceed")],
+                [InlineKeyboardButton("❌ Отмена", callback_data="heygen_cancel")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Send the audio file to the user
+            try:
+                with open(audio_file_path, 'rb') as audio_file:
+                    await context.bot.send_audio(
+                        chat_id=query.message.chat_id,
+                        audio=InputFile(audio_file, filename=os.path.basename(audio_file_path)),
+                        caption=f"🎙️ Аудио превью для '{title}' готово. Прослушайте и подтвердите переход к генерации видео в HeyGen.",
+                        title=title,
+                        reply_markup=reply_markup # Attach keyboard to the audio message
+                    )
+                await query.edit_message_text(f"Превью для '{title}' отправлено. Выберите следующее действие.") # Edit original message
+            except Exception as e:
+                logger.error(f"Error sending audio file for reel '{title}': {e}")
+                await query.edit_message_text(
+                    f"⚠️ Ошибка при отправке аудио превью для '{title}'. Однако, аудио могло быть сгенерировано. Выберите действие:",
+                    reply_markup=reply_markup # Still show options
+                )
+        else:
+            # Audio generation failed
+            await query.edit_message_text(
+                f"❌ Не удалось сгенерировать аудио для '{title}'. Пожалуйста, проверьте логи.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться к выбору ролика", callback_data="menu_back"), # Goes back to main menu for now
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+
+    except Exception as e:
+        logger.error(f"Error in handle_reel_selection (audio generation part): {str(e)}")
+        await query.edit_message_text(
+            f"❌ Произошла критическая ошибка при подготовке аудио: {str(e)}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+            ]])
+        )
+
+async def handle_heygen_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the user's confirmation to proceed with HeyGen video generation or cancel."""
+    query = update.callback_query
+    await query.answer()
+    
+    action = query.data
+    selected_reel_metadata = context.user_data.get('selected_reel_for_heygen')
+    generated_audio_path = context.user_data.get('generated_audio_path')
+
+    # Clean up user_data related to this specific flow
+    context.user_data.pop('selected_reel_for_heygen', None)
+    context.user_data.pop('generated_audio_path', None)
+
+    # Try to delete the temporary audio file
+    if generated_audio_path and os.path.exists(generated_audio_path):
+        try:
+            os.remove(generated_audio_path)
+            logger.info(f"Cleaned up temporary audio file: {generated_audio_path}")
+        except OSError as e:
+            logger.error(f"Error deleting temporary audio file {generated_audio_path}: {e}")
+
+    if action == "heygen_proceed":
+        if not selected_reel_metadata:
+            await query.edit_message_text(
+                "❌ Ошибка: данные о выбранном ролике не найдены. Пожалуйста, начните сначала.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return
+
+        title = selected_reel_metadata.get('title', 'Без названия')
+        await query.edit_message_text(
+            f"⏳ Отлично! Начинаю генерацию видео в HeyGen для ролика: {title}\n\n"
+            "Это может занять несколько минут..."
         )
         
         # Get the workflow tasks
@@ -1200,38 +1341,34 @@ async def handle_reel_selection(update: Update, context: ContextTypes.DEFAULT_TY
         workflow_tasks = PlatformFactory.get_platform_tasks("workflow")
         
         # Process the selected reel in a background task
-        import asyncio
         loop = asyncio.get_event_loop()
         success = await loop.run_in_executor(
             None,
-            lambda: workflow_tasks.process_selected_reel_task(selected_reel)
+            workflow_tasks.process_selected_reel_task, # This calls generate_heygen_video internally
+            selected_reel_metadata
         )
         
         if success:
             # Show success message
-            await processing_message.edit_text(
-                f"✅ Видео успешно обработано и загружено на YouTube!\n\n"
-                f"Название: {title}\n\n"
-                "Видео доступно по ссылке, которая отображается в логах."
+            await query.edit_message_text(
+                f"✅ Видео для '{title}' успешно обработано и должно быть загружено на YouTube!\n\n"
+                "Проверьте логи для ссылки на видео."
             )
         else:
             # Show error message
-            await processing_message.edit_text(
-                f"❌ Произошла ошибка при обработке ролика: {title}\n\n"
+            await query.edit_message_text(
+                f"❌ Произошла ошибка при генерации видео в HeyGen или загрузке на YouTube для '{title}'.\n\n"
                 "Проверьте логи для получения дополнительной информации."
             )
         
         # Show menu button
-        keyboard = [
-            [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
-        ]
+        keyboard = [[InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.effective_chat.send_message("Что делаем дальше?", reply_markup=reply_markup)
-        
-    except Exception as e:
-        logger.error(f"Error in handle_reel_selection: {str(e)}")
+        await query.message.reply_text("Что делаем дальше?", reply_markup=reply_markup)
+
+    elif action == "heygen_cancel":
         await query.edit_message_text(
-            f"❌ Произошла ошибка при обработке ролика: {str(e)}",
+            "Операция отменена. Вы можете выбрать другой ролик или вернуться в меню.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
             ]])
@@ -1305,6 +1442,9 @@ def main():
     
     # Add handler for reel selection
     application.add_handler(CallbackQueryHandler(handle_reel_selection, pattern="^reel_\d+$"))
+    
+    # Add handler for HeyGen confirmation
+    application.add_handler(CallbackQueryHandler(handle_heygen_confirmation, pattern="^(heygen_proceed|heygen_cancel)$"))
     
     # Add fallback handler for messages outside conversations
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text))

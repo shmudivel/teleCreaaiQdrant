@@ -35,6 +35,17 @@ from .prompts import (
 # Import API utilities
 from .api_utils import call_claude_api, RateLimiter, exponential_backoff_retry, create_claude_client
 
+# +++ Imports for audio cutting +++
+from pydub import AudioSegment
+from pydub.silence import detect_silence
+# Import the audio_cutter module
+from .audio_cutter import cut_audio_file
+# +++ End imports for audio cutting +++
+
+# +++ Imports for HeyGen video generation from the dedicated script +++
+from .generate_heygen_video import upload_audio_file, generate_video_with_multiple_avatars, check_video_status
+# +++ End HeyGen imports +++
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -53,17 +64,34 @@ TOKEN_FILE = "youtube_token.json"
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID")
 
+# +++ HeyGen Specific Constants for Audio Asset Workflow +++
+# Using the same API Key as defined above for HEYGEN_API_KEY
+HEYGEN_AVATAR_ID_1 = "a7f27a8c3f954a54b599f04dff1ae4ac"  # From generate_heygen_video.py
+HEYGEN_AVATAR_ID_2 = "21095f74dfe9401a85d044c207d19f2b"  # From generate_heygen_video.py
+# +++ End HeyGen Specific Constants +++
+
+# +++ Default cutting parameters (can be made configurable later) +++
+DEFAULT_MIN_SILENCE_LEN_PARAM = 2200  # ms (Changed from 2800 to match audio_cutter.py)
+DEFAULT_SILENCE_THRESH_PARAM = -46    # dBFS (This is not directly used by cut_audio_file's core logic but kept for potential future use)
+DEFAULT_MIN_TARGET_SILENCE_DURATION = 2.2  # seconds (Changed from 3.0)
+DEFAULT_MAX_TARGET_SILENCE_DURATION = 10.0  # seconds (Changed from 6.0)
+DEFAULT_NUM_DESIRED_CUTS = 3 # Results in up to 4 parts
+DEFAULT_END_OF_WORD_BUFFER_MS = 500 # ms (Changed from 700 to match audio_cutter.py)
+# +++ End cutting parameters +++
+
 def generate_audio_with_elevenlabs(script_text: str, output_dir: str, reel_title: str) -> Optional[str]:
     """
     Generates audio from script text using ElevenLabs API and saves it to a file.
+    It then attempts to cut this audio file into parts based on silence.
 
     Args:
         script_text: The text (SSML-enhanced) to convert to speech.
-        output_dir: The directory to save the generated audio file.
+        output_dir: The directory to save the generated audio file and its parts.
         reel_title: The title of the reel, used for naming the audio file.
 
     Returns:
-        The path to the generated audio file, or None if generation failed.
+        The path to the original (uncut) generated audio file, or None if generation failed.
+        Cut parts are saved as a side effect in a subdirectory.
     """
     logger.info(f"Attempting to generate audio with ElevenLabs for: {reel_title}")
 
@@ -91,31 +119,114 @@ def generate_audio_with_elevenlabs(script_text: str, output_dir: str, reel_title
         }
     }
     
-    try:
-        response = requests.post(tts_url, json=data, headers=headers, stream=True, timeout=300) # Added timeout
+    audio_path: Optional[str] = None # Define audio_path here for broader scope
 
-        if response.status_code == 200:
-            Path(output_dir).mkdir(parents=True, exist_ok=True)
-            # Sanitize reel_title for filename and limit length
-            safe_title = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in reel_title).rstrip()
-            safe_title = safe_title.replace(' ', '_')[:50] # Limit length after sanitizing
-            
-            audio_filename = f"elevenlabs_audio_{safe_title}_{int(time.time())}.mp3"
-            audio_path = os.path.join(output_dir, audio_filename)
-            
-            with open(audio_path, 'wb') as f:
-                shutil.copyfileobj(response.raw, f)
-            logger.info(f"Successfully generated ElevenLabs audio and saved to {audio_path}")
-            return audio_path
+    try:
+        # Use a timeout for the request
+        response = requests.post(tts_url, json=data, headers=headers, stream=True, timeout=300)
+        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        # Sanitize reel_title for filename and limit length
+        safe_title = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in reel_title).rstrip()
+        safe_title = safe_title.replace(' ', '_')[:50] # Limit length after sanitizing
+        
+        audio_filename = f"elevenlabs_audio_{safe_title}_{int(time.time())}.mp3"
+        audio_path = os.path.join(output_dir, audio_filename)
+        
+        with open(audio_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192): 
+                # filter out keep-alive new chunks
+                if chunk: 
+                    f.write(chunk)
+        
+        logger.info(f"Successfully generated ElevenLabs audio and saved to {audio_path}")
+
+        # Now, attempt to cut the generated audio into parts
+        # Create a specific subdirectory for the parts of this audio file
+        parts_subdir_name = f"parts_{Path(audio_filename).stem}" # Use stem to avoid double .mp3
+        parts_output_dir = os.path.join(output_dir, parts_subdir_name)
+        Path(parts_output_dir).mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Attempting to cut {audio_path} into parts, saving to {parts_output_dir}")
+        
+        # Use the imported cut_audio_file function from audio_cutter.py
+        cut_audio_parts_paths = cut_audio_file(audio_path, parts_output_dir,
+                                              min_silence_len_param=DEFAULT_MIN_SILENCE_LEN_PARAM,
+                                              min_target_silence_duration=DEFAULT_MIN_TARGET_SILENCE_DURATION,
+                                              max_target_silence_duration=DEFAULT_MAX_TARGET_SILENCE_DURATION,
+                                              num_desired_cuts=DEFAULT_NUM_DESIRED_CUTS,
+                                              end_of_word_buffer_ms=DEFAULT_END_OF_WORD_BUFFER_MS)
+        
+        if cut_audio_parts_paths:
+            logger.info(f"Successfully processed audio cutting. {len(cut_audio_parts_paths)} parts generated in {parts_output_dir}:")
+            for part_p in cut_audio_parts_paths:
+                logger.info(f"  - {part_p}")
         else:
-            logger.error(f"ElevenLabs API request failed with status {response.status_code}: {response.text}")
-            return None
-    except requests.exceptions.RequestException as e:
-        logger.error(f"ElevenLabs API request error: {e}")
+            logger.warning(f"Audio cutting did not produce parts for {audio_path}, or an error occurred during cutting. Check previous logs.")
+            # The original audio_path is still valid and will be returned.
+
+        return audio_path # Return the path to the original, uncut audio file
+
+    except requests.exceptions.HTTPError as http_err:
+        # Accessing response.text here might be problematic if the error occurred before response was fully received
+        # or if response is not available in this scope due to earlier error.
+        # Let's ensure response is defined or provide a generic message.
+        error_detail = ""
+        if 'response' in locals() and hasattr(response, 'text'):
+            error_detail = f" - {response.text}"
+        logger.error(f"ElevenLabs API request failed with HTTP error: {http_err}{error_detail}")
+        return None
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"ElevenLabs API request error: {req_err}")
         return None
     except Exception as e:
-        logger.error(f"An unexpected error occurred during ElevenLabs audio generation: {e}")
+        # If audio_path was set and an error happens during cutting, we might still have the original.
+        # However, the function expects to return Optional[str] for the *original* audio.
+        # If the error is in cutting, the original audio might still be fine.
+        logger.error(f"An unexpected error occurred: {e}")
+        if audio_path and os.path.exists(audio_path) and isinstance(e, (FileNotFoundError, Exception)) and "pydub" in str(e).lower() : # Check if error is from pydub
+             logger.warning(f"Error occurred during audio cutting phase for {audio_path}. Original audio is likely intact.")
+             return audio_path # Return original if cutting failed but generation was ok
         return None
+
+def suggest_next_topic(
+    all_reels: List[Dict[str, Any]],
+    processed_reel_identifiers: List[str],
+    identifier_key: str = 'title'
+) -> Optional[Dict[str, Any]]:
+    """
+    Suggests the next reel topic for audio generation from a list of all reels,
+    excluding those that have already been processed.
+
+    Args:
+        all_reels: A list of dictionaries, where each dictionary represents a reel
+                   and contains at least an identifier key (e.g., 'title').
+        processed_reel_identifiers: A list of identifiers (e.g., titles or filenames)
+                                    of reels for which audio has already been generated.
+        identifier_key: The key in the reel dictionary to use for matching against
+                        processed_reel_identifiers. Defaults to 'title'.
+
+    Returns:
+        A dictionary representing the suggested reel, or None if all reels have been processed
+        or no unprocessed reels are found.
+    """
+    logger.info(f"Attempting to suggest next topic. Total reels: {len(all_reels)}, Processed: {len(processed_reel_identifiers)}")
+
+    unprocessed_reels = []
+    for reel in all_reels:
+        reel_identifier = reel.get(identifier_key)
+        if reel_identifier and reel_identifier not in processed_reel_identifiers:
+            unprocessed_reels.append(reel)
+
+    if not unprocessed_reels:
+        logger.info("No more unprocessed topics to suggest.")
+        return None
+
+    # Suggest the first one from the list of unprocessed reels
+    suggested_reel = unprocessed_reels[0]
+    logger.info(f"Suggesting next topic: {suggested_reel.get(identifier_key, 'Unknown Topic')}")
+    return suggested_reel
 
 def process_google_doc(url: str, service_account_file: str) -> str:
     """Process a Google Doc and divide it into sections.
@@ -411,385 +522,6 @@ def final_reel_editing(top_reels_dir: str, edit_prompt: str, api_key: Optional[s
     logger.info(f"Final reel editing completed. Edited reels saved to: {final_reels_dir}")
     return final_reels_dir
 
-def generate_heygen_video(metadata):
-    """Generate a video using HeyGen API"""
-    # Extract data from metadata
-    script = metadata["heygen_script"]
-    title = metadata["title"]
-    
-    # HeyGen API key and headers
-    headers = {
-        "X-Api-Key": HEYGEN_API_KEY,
-        "Content-Type": "application/json"
-    }
-    
-    # Avatar and voice settings
-    avatar_id = "866d2e167e8a43a38dcb4ddf96a52d97"
-    voice_id = "aa6539b580bf4c9a93879977044e9a12"
-    
-    # API endpoint for video generation
-    generate_url = "https://api.heygen.com/v2/video/generate"
-    
-    # Prepare the request payload
-    payload = {
-        "video_inputs": [
-            {
-                "character": {
-                    "type": "avatar",
-                    "avatar_id": avatar_id,
-                    "avatar_style": "normal",
-                    "scale": 2.2,
-                    "position": {
-                        "x": 0,
-                        "y": -0.3
-                    }
-                },
-                "voice": {
-                    "type": "text",
-                    "input_text": script,
-                    "voice_id": voice_id
-                },
-                "background": {
-                    "type": "color",
-                    "value": "#000000"
-                }
-            }
-        ],
-        "dimension": {
-            "width": 720,
-            "height": 1280
-        },
-        "video_type": "vertical",
-        "caption": True,
-        "title": title
-    }
-    
-    # Generate the video
-    logger.info(f"Generating HeyGen video for: {title}")
-    response = requests.post(generate_url, json=payload, headers=headers)
-    
-    if response.status_code != 200:
-        logger.error(f"Error generating video: {response.text}")
-        return None
-    
-    # Extract video ID from response
-    response_data = response.json()
-    if "data" not in response_data or "video_id" not in response_data["data"]:
-        logger.error(f"Error: Invalid response format: {response_data}")
-        return None
-    
-    video_id = response_data["data"]["video_id"]
-    logger.info(f"Video generation started. Video ID: {video_id}")
-    
-    # Wait for video to complete
-    video_url = check_heygen_video_status(video_id, headers)
-    return video_url
-
-def check_heygen_video_status(video_id, headers):
-    """Check HeyGen video generation status"""
-    video_status_url = f"https://api.heygen.com/v1/video_status.get?video_id={video_id}"
-    
-    while True:
-        response = requests.get(video_status_url, headers=headers)
-        if response.status_code != 200:
-            logger.error(f"Error checking video status: {response.text}")
-            return None
-        
-        status_data = response.json()
-        if "data" not in status_data:
-            logger.error(f"Error: Invalid status response format: {status_data}")
-            return None
-        
-        status = status_data["data"]["status"]
-        
-        if status == "completed":
-            video_url = status_data["data"]["video_url"]
-            thumbnail_url = status_data["data"]["thumbnail_url"]
-            logger.info(f"Video generation completed!")
-            logger.info(f"Video URL: {video_url}")
-            logger.info(f"Thumbnail URL: {thumbnail_url}")
-            return video_url
-        
-        elif status == "processing" or status == "pending" or status == "waiting":
-            logger.info("Video is still processing. Checking status again in 10 seconds...")
-            time.sleep(10)
-        
-        elif status == "failed":
-            error = status_data["data"].get("error", "Unknown error")
-            logger.error(f"Video generation failed: {error}")
-            return None
-        
-        else:
-            logger.error(f"Unknown status: {status}")
-            return None
-
-def upload_to_drive(video_url, file_name, title):
-    """Upload the video to Google Drive."""
-    logger.info(f"Uploading video to Google Drive...")
-    
-    # Create a temporary file to store the downloaded video
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-    
-    # Download the video from the URL
-    response = requests.get(video_url)
-    if response.status_code != 200:
-        logger.error(f"Error downloading video from URL: {response.status_code}")
-        return None
-    
-    # Save temporarily
-    with open(temp_file, "wb") as f:
-        f.write(response.content)
-    
-    logger.info(f"Video downloaded to temporary file: {temp_file}")
-    
-    # Authenticate with Google Drive using hard-coded service account path
-    scopes = ['https://www.googleapis.com/auth/drive']
-    
-    try:
-        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_PATH, scopes=scopes)
-        drive_service = build('drive', 'v3', credentials=credentials)
-        
-        # Upload to Google Drive
-        file_metadata = {
-            'name': file_name,
-            'description': title,
-            'mimeType': 'video/mp4'
-        }
-        
-        media = MediaFileUpload(temp_file, mimetype='video/mp4', resumable=True)
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id,webViewLink').execute()
-        
-        # Get Drive link
-        file_id = file.get('id')
-        web_link = file.get('webViewLink')
-        
-        logger.info(f"Video uploaded successfully to Google Drive!")
-        logger.info(f"File ID: {file_id}")
-        logger.info(f"Web link: {web_link}")
-        
-        # Set permissions to anyone with the link can view
-        permission = {
-            'type': 'anyone',
-            'role': 'reader'
-        }
-        drive_service.permissions().create(fileId=file_id, body=permission).execute()
-        logger.info("Set permissions: Anyone with the link can view")
-        
-        return {'file_id': file_id, 'temp_path': temp_file}
-    
-    except Exception as e:
-        logger.error(f"Error uploading to Drive: {str(e)}")
-        # Clean up temporary file
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
-        return None
-
-def get_authenticated_youtube_service():
-    """Get an authenticated YouTube API service with token persistence."""
-    credentials = None
-    
-    # Define OAuth scopes
-    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
-    
-    # Allow custom token file path via environment variable
-    token_file_path = os.environ.get("YOUTUBE_TOKEN_PATH", TOKEN_FILE)
-    
-    # Also check in common locations
-    potential_token_paths = [
-        token_file_path,
-        TOKEN_FILE,
-        "./youtube_token.json",
-        "/app/youtube_token.json",  # Docker container path
-        os.path.join(os.path.dirname(__file__), "youtube_token.json"),
-        "/app/tests/big_text_to_reels/youtube_token.json",  # Specific path mentioned by user
-        "/Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/tests/big_text_to_reels/youtube_token.json"
-    ]
-    
-    # Create client secrets file from hardcoded values
-    client_config = {
-        "installed": {
-            "client_id": YOUTUBE_CLIENT_ID,
-            "project_id": "youtube-uploader",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_secret": YOUTUBE_CLIENT_SECRET,
-            "redirect_uris": ["http://localhost"]
-        }
-    }
-    
-    client_secrets_file = "client_secrets.json"
-    with open(client_secrets_file, "w") as f:
-        json.dump(client_config, f)
-    
-    try:
-        # Try all potential token file paths
-        for token_path in potential_token_paths:
-            if os.path.exists(token_path):
-                logger.info(f"Found YouTube token file at: {token_path}")
-                try:
-                    with open(token_path, 'r') as token_file:
-                        token_data = json.load(token_file)
-                        credentials = Credentials.from_authorized_user_info(token_data)
-                        logger.info("Using stored YouTube credentials, no browser authentication needed")
-                        break
-                except Exception as e:
-                    logger.warning(f"Error loading token from {token_path}: {str(e)}")
-        
-        # If credentials don't exist or are invalid, we need to create new ones
-        if not credentials or not credentials.valid:
-            if credentials and credentials.expired and credentials.refresh_token:
-                logger.info("Refreshing expired credentials...")
-                try:
-                    credentials.refresh(Request())
-                    # Save refreshed credentials to file
-                    token_data = {
-                        'token': credentials.token,
-                        'refresh_token': credentials.refresh_token,
-                        'token_uri': credentials.token_uri,
-                        'client_id': credentials.client_id,
-                        'client_secret': credentials.client_secret,
-                        'scopes': credentials.scopes
-                    }
-                    with open(token_file_path, 'w') as token_file:
-                        json.dump(token_data, token_file)
-                    logger.info(f"Refreshed YouTube credentials saved to {token_file_path}")
-                except Exception as e:
-                    logger.error(f"Error refreshing credentials: {str(e)}")
-                    raise
-            else:
-                # In a headless environment, we can't run a browser so provide a clear error
-                # and alternative instructions
-                try:
-                    logger.info("No valid YouTube credentials found. Need browser authentication (one-time setup)...")
-                    flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
-                        client_secrets_file, scopes)
-                    
-                    # Use a random port to avoid conflicts
-                    port = random.randint(8080, 8089)
-                    credentials = flow.run_local_server(port=port)
-                    
-                    # Save credentials
-                    token_data = {
-                        'token': credentials.token,
-                        'refresh_token': credentials.refresh_token,
-                        'token_uri': credentials.token_uri,
-                        'client_id': credentials.client_id,
-                        'client_secret': credentials.client_secret,
-                        'scopes': credentials.scopes
-                    }
-                    
-                    with open(token_file_path, 'w') as token_file:
-                        json.dump(token_data, token_file)
-                    logger.info(f"YouTube credentials saved to {token_file_path} for future use")
-                except Exception as e:
-                    # Provide helpful instructions for headless environments
-                    logger.error(f"Browser authentication not available: {str(e)}")
-                    logger.error("To fix this issue:")
-                    logger.error("1. Run the YouTube authentication on a local machine with a browser")
-                    logger.error("2. Copy the resulting youtube_token.json file to the Docker container or application directory")
-                    logger.error("3. Set YOUTUBE_TOKEN_PATH environment variable if needed")
-                    
-                    # Re-raise the exception
-                    raise RuntimeError("YouTube OAuth authentication requires a browser. Please pre-authenticate and provide a token file.") from e
-        
-        return build("youtube", "v3", credentials=credentials)
-    
-    finally:
-        # Clean up client secrets
-        if os.path.exists(client_secrets_file):
-            os.remove(client_secrets_file)
-
-def download_from_drive(file_id):
-    """Download video from Google Drive using service account authentication."""
-    logger.info(f"Downloading video from Google Drive (File ID: {file_id})...")
-    
-    # Use service account credentials with hard-coded path
-    scopes = ['https://www.googleapis.com/auth/drive.readonly']
-    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_PATH, scopes=scopes)
-    
-    # Build the Drive service
-    drive_service = build('drive', 'v3', credentials=credentials)
-    
-    # Get file metadata
-    file_metadata = drive_service.files().get(fileId=file_id).execute()
-    logger.info(f"Found file: {file_metadata.get('name')}")
-    
-    # Create temporary file to store the video
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-    
-    # Download the file content
-    request = drive_service.files().get_media(fileId=file_id)
-    
-    with open(temp_file, 'wb') as f:
-        # Stream the download to avoid memory issues with large files
-        downloader = MediaIoBaseDownload(f, request)
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-            logger.info(f"Download progress: {int(status.progress() * 100)}%")
-    
-    logger.info(f"Video downloaded to temporary file: {temp_file}")
-    return temp_file
-
-def upload_to_youtube(video_path, title, description, tags=None):
-    """Upload a video to YouTube using stored OAuth credentials."""
-    
-    # Check if video file exists
-    if not os.path.exists(video_path):
-        logger.error(f"Error: Video file not found at {video_path}")
-        return None
-    
-    try:
-        # Get authenticated YouTube service
-        youtube = get_authenticated_youtube_service()
-        
-        # Prepare video metadata
-        if tags is None:
-            tags = []
-        
-        # Add #Shorts tag for vertical videos
-        if "#Shorts" not in tags:
-            tags.append("#Shorts")
-        
-        # Set up the video metadata
-        body = {
-            "snippet": {
-                "title": title,
-                "description": description,
-                "tags": tags,
-                "categoryId": "22"  # People & Blogs category
-            },
-            "status": {
-                "privacyStatus": "public",
-                "selfDeclaredMadeForKids": False
-            }
-        }
-        
-        # Create upload request
-        media = MediaFileUpload(video_path, mimetype='video/mp4', resumable=True)
-        
-        # Execute the upload
-        logger.info(f"Uploading video to YouTube: {title}")
-        request = youtube.videos().insert(
-            part=",".join(body.keys()),
-            body=body,
-            media_body=media
-        )
-        
-        response = request.execute()
-        
-        # Get the video ID
-        video_id = response["id"]
-        logger.info(f"Upload complete! YouTube Video ID: {video_id}")
-        logger.info(f"YouTube URL: https://www.youtube.com/watch?v={video_id}")
-        
-        return video_id
-        
-    except Exception as e:
-        logger.error(f"An error occurred during upload: {str(e)}")
-        return None
-
 def process_selected_reel(metadata):
     """Process the selected reel - generate HeyGen video and upload to YouTube."""
     
@@ -801,12 +533,93 @@ def process_selected_reel(metadata):
     elif 'original_script' in metadata:
         logger.warning("Using only optimized script without validation or number conversion - consider adding these steps")
     
-    # Step 1: Generate HeyGen video
-    video_url = generate_heygen_video(metadata)
-    if not video_url:
-        logger.error("Failed to generate video with HeyGen. Workflow aborted.")
+    script = metadata.get("heygen_script")
+    title = metadata.get("title", "Untitled HeyGen Video")
+
+    if not script:
+        logger.error("No heygen_script found in metadata for process_selected_reel.")
         return False
+
+    video_url = None
+    temp_audio_dir = None
+    audio_file_path_for_tts = None
+
+    try:
+        # Step 1a: Generate audio from script using ElevenLabs
+        logger.info(f"Generating audio for '{title}' using ElevenLabs for HeyGen text-to-video flow.")
+        # Create a temporary directory for the audio file
+        # Base the temp dir on metadata filename if possible to keep outputs somewhat organized
+        metadata_filename = metadata.get('filename')
+        base_output_dir_for_audio = os.path.dirname(metadata_filename) if metadata_filename and os.path.isabs(metadata_filename) else tempfile.gettempdir()
+        
+        # Create a specific subdir for this TTS audio to avoid filename clashes and for easier cleanup
+        temp_audio_parent_dir = os.path.join(base_output_dir_for_audio, "temp_tts_for_heygen")
+        Path(temp_audio_parent_dir).mkdir(parents=True, exist_ok=True)
+        # Individual temp dir for this specific audio generation call
+        temp_audio_dir = tempfile.mkdtemp(dir=temp_audio_parent_dir)
+
+        audio_file_path_for_tts = generate_audio_with_elevenlabs(script, temp_audio_dir, title)
+
+        if not audio_file_path_for_tts:
+            logger.error(f"Failed to generate audio using ElevenLabs for '{title}'.")
+            return False
+
+        # Step 1b: Upload audio to HeyGen
+        logger.info(f"Uploading generated audio '{audio_file_path_for_tts}' to HeyGen.")
+        audio_asset_id = upload_audio_file(HEYGEN_API_KEY, audio_file_path_for_tts)
+
+        if not audio_asset_id:
+            logger.error(f"Failed to upload audio asset to HeyGen for '{title}'.")
+            return False
+
+        # Step 1c: Generate HeyGen video using the audio asset
+        logger.info(f"Generating HeyGen video for '{title}' using audio asset ID '{audio_asset_id}'.")
+        # Using HEYGEN_AVATAR_ID_1 as a default for single script/scene videos
+        video_id_response = generate_video_with_multiple_avatars(
+            HEYGEN_API_KEY,
+            avatar_ids=[HEYGEN_AVATAR_ID_1], # Needs a list of avatar IDs
+            audio_asset_ids=[audio_asset_id]  # Needs a list of audio asset IDs
+        )
+        
+        # generate_video_with_multiple_avatars returns video_id directly, not a dict
+        video_id = video_id_response 
+
+        if not video_id:
+            logger.error(f"Failed to start HeyGen video generation for '{title}'.")
+            return False
+        
+        logger.info(f"HeyGen video generation started for '{title}'. Video ID: {video_id}")
+
+        # Step 1d: Check video status
+        video_url = check_video_status(HEYGEN_API_KEY, video_id)
+        
+        if not video_url:
+            logger.error(f"HeyGen video generation failed or did not complete for '{title}'.")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error during HeyGen video generation pipeline for '{title}': {e}")
+        logger.error(traceback.format_exc())
+        return False
+    finally:
+        # Clean up temporary audio file and directory
+        if audio_file_path_for_tts and os.path.exists(audio_file_path_for_tts):
+            try:
+                os.remove(audio_file_path_for_tts)
+                logger.info(f"Removed temporary TTS audio file: {audio_file_path_for_tts}")
+            except OSError as e:
+                logger.error(f"Error removing temporary TTS audio file {audio_file_path_for_tts}: {e}")
+        if temp_audio_dir and os.path.exists(temp_audio_dir):
+            try:
+                shutil.rmtree(temp_audio_dir) # Use shutil.rmtree for directory
+                logger.info(f"Removed temporary TTS audio directory: {temp_audio_dir}")
+            except OSError as e:
+                logger.error(f"Error removing temporary TTS audio directory {temp_audio_dir}: {e}")
     
+    if not video_url: # Should be caught earlier, but as a safeguard
+        logger.error("Failed to generate video with HeyGen (final check). Workflow aborted.")
+        return False
+
     # Step 2: Upload to Google Drive
     title = metadata.get('title', 'HeyGen Generated Video')
     file_name = f"{title.replace(' ', '_')[:30]}_video.mp4"  # Limit filename length
@@ -861,6 +674,8 @@ def process_selected_reel(metadata):
         if os.path.exists(temp_video_path):
             os.remove(temp_video_path)
             logger.info(f"Removed temporary video file: {temp_video_path}")
+
+    return converted_dir
 
 @exponential_backoff_retry()
 def convert_numbers_to_words(client, script_data, model="claude-3-7-sonnet-20250219"):
@@ -1332,3 +1147,352 @@ def process_google_doc_to_reels(doc_url: str, output_dir: Optional[str] = None, 
         import traceback
         logger.error(traceback.format_exc())
         raise 
+
+# +++ New HeyGen functions for audio asset workflow +++
+def upload_single_audio_to_heygen(api_key: str, audio_path: str) -> Optional[str]:
+    """Upload an audio file to HeyGen and get the asset ID."""
+    url = "https://upload.heygen.com/v1/asset"
+    headers = {"X-Api-Key": api_key, "Content-Type": "audio/mpeg"}
+    
+    logger.info(f"Uploading audio file to HeyGen: {audio_path}")
+    if not os.path.exists(audio_path):
+        logger.error(f"Audio file not found for upload: {audio_path}")
+        return None
+        
+    try:
+        with open(audio_path, "rb") as audio_file:
+            response = requests.post(url, headers=headers, data=audio_file, timeout=120)
+        response.raise_for_status()
+        result = response.json()
+        if "data" in result and "id" in result["data"]:
+            asset_id = result["data"]["id"]
+            logger.info(f"HeyGen audio uploaded successfully. Asset ID: {asset_id} for {audio_path}")
+            return asset_id
+        else:
+            logger.error(f"Error: Invalid HeyGen upload response format: {result} for {audio_path}")
+            return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error uploading audio to HeyGen {audio_path}: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            logger.error(f"HeyGen Response: {e.response.text}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error uploading audio to HeyGen {audio_path}: {e}")
+        return None
+
+def create_video_from_cut_audio_parts(reel_metadata: Dict, cut_audio_parts_dir: str) -> Optional[str]:
+    """
+    Orchestrates creating a HeyGen video from pre-cut audio parts.
+    Uploads audio parts, generates video with alternating avatars, and polls for status.
+    """
+    api_key = HEYGEN_API_KEY # Use the globally defined key
+    if not api_key:
+        logger.error("HEYGEN_API_KEY not found in environment variables for create_video_from_cut_audio_parts.")
+        return None
+
+    title = reel_metadata.get('title', 'Untitled HeyGen Video')
+    logger.info(f"Starting HeyGen video creation for '{title}' using audio parts from: {cut_audio_parts_dir}")
+
+    if not os.path.isdir(cut_audio_parts_dir):
+        logger.error(f"Cut audio parts directory not found: {cut_audio_parts_dir}")
+        return None
+
+    audio_part_files = sorted([
+        os.path.join(cut_audio_parts_dir, f)
+        for f in os.listdir(cut_audio_parts_dir)
+        if f.startswith("part_") and f.endswith(".mp3")
+    ], key=lambda x: int(re.search(r'part_(\d+)\.mp3', x).group(1))) # Sort by part number
+
+    if not audio_part_files:
+        logger.error(f"No audio part_*.mp3 files found in {cut_audio_parts_dir}")
+        return None
+    
+    logger.info(f"Found {len(audio_part_files)} audio parts for '{title}': {audio_part_files}")
+
+    audio_asset_ids = []
+    for part_path in audio_part_files:
+        asset_id = upload_single_audio_to_heygen(api_key, part_path)
+        if asset_id:
+            audio_asset_ids.append(asset_id)
+        else:
+            logger.error(f"Failed to upload audio part {part_path} for '{title}'. Aborting HeyGen video creation.")
+            return None # If one part fails, abort.
+
+    if not audio_asset_ids: # Should be caught by the None check above, but as a safeguard
+        logger.error(f"No audio assets were successfully uploaded for '{title}'.")
+        return None
+
+    # Define the avatar cycle
+    avatar_cycle = [HEYGEN_AVATAR_ID_1, HEYGEN_AVATAR_ID_2]
+    
+    video_id = generate_video_with_multiple_avatars(api_key, avatar_ids=avatar_cycle, audio_asset_ids=audio_asset_ids)
+    if not video_id:
+        logger.error(f"Failed to initiate HeyGen video generation for '{title}'.")
+        return None
+
+    # Poll for video completion
+    final_video_url = check_video_status(api_key, video_id)
+    if final_video_url:
+        logger.info(f"Successfully generated HeyGen video for '{title}'. URL: {final_video_url}")
+        # Here, you might want to trigger the next steps like uploading to Drive/YouTube.
+        # For now, this function just returns the URL.
+        # The existing process_selected_reel in integration.py handles Drive/YT upload for text-to-speech HeyGen.
+        # This new flow focuses on generating the HeyGen video with audio assets.
+        # The bot.py will need to handle what to do with this URL.
+        
+        # Let's integrate the Drive and YouTube upload here for consistency with the original process_selected_reel
+        drive_info = upload_to_drive(final_video_url, f"{title.replace(' ', '_')[:30]}_HeyGenAudio.mp4", title)
+        if not drive_info:
+            logger.error(f"Failed to upload HeyGen video for '{title}' to Google Drive. Video URL was: {final_video_url}")
+            # Still return the HeyGen URL as the video was generated.
+            return final_video_url 
+
+        temp_video_path = drive_info.get('temp_path')
+        drive_file_id = drive_info.get('file_id')
+
+        try:
+            if not temp_video_path or not os.path.exists(temp_video_path):
+                 # If temp_path is not valid (e.g. from upload_to_drive if it only returned ID)
+                 # we need to download it again using file_id for YouTube upload
+                 logger.info(f"Temporary video path not available or invalid for {title}, re-downloading from Drive ID: {drive_file_id}")
+                 if drive_file_id:
+                     temp_video_path = download_from_drive(drive_file_id) # This returns a new temp_path
+                 else:
+                     logger.error(f"Cannot download for YouTube upload, Drive file ID missing for {title}")
+                     return final_video_url # Return HeyGen URL
+
+            if temp_video_path and os.path.exists(temp_video_path):
+                youtube_description = reel_metadata.get('description', f"Video for {title}")
+                youtube_tags = reel_metadata.get('hashtags', [])
+                
+                youtube_video_id = upload_to_youtube(temp_video_path, title, youtube_description, youtube_tags)
+                if youtube_video_id:
+                    logger.info(f"Successfully uploaded HeyGen video for '{title}' to YouTube. YouTube ID: {youtube_video_id}")
+                    return f"https://www.youtube.com/watch?v={youtube_video_id}" # Return YouTube URL
+                else:
+                    logger.error(f"Failed to upload HeyGen video for '{title}' to YouTube. HeyGen URL: {final_video_url}")
+            else:
+                logger.error(f"Could not obtain local video file for YouTube upload of '{title}'. HeyGen URL: {final_video_url}")
+        
+        finally:
+            if temp_video_path and os.path.exists(temp_video_path):
+                try:
+                    os.remove(temp_video_path)
+                    logger.info(f"Cleaned up temporary video file: {temp_video_path}")
+                except OSError as e:
+                    logger.error(f"Error deleting temporary video file {temp_video_path}: {e}")
+        
+        return final_video_url # Fallback to HeyGen URL if YouTube upload fails
+    else:
+        logger.error(f"HeyGen video for '{title}' did not complete or failed.")
+        return None
+
+def upload_to_drive(video_url, file_name, title):
+    """Upload the video to Google Drive."""
+    logger.info(f"Uploading video to Google Drive...")
+    
+    # Create a temporary file to store the downloaded video
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+    
+    # Download the video from the URL
+    response = requests.get(video_url)
+    if response.status_code != 200:
+        logger.error(f"Error downloading video from URL: {response.status_code}")
+        return None
+    
+    # Save temporarily
+    with open(temp_file, "wb") as f:
+        f.write(response.content)
+    
+    logger.info(f"Video downloaded to temporary file: {temp_file}")
+    
+    # Authenticate with Google Drive
+    credentials_path = SERVICE_ACCOUNT_PATH
+    scopes = ['https://www.googleapis.com/auth/drive']
+    credentials = service_account.Credentials.from_service_account_file(credentials_path, scopes=scopes)
+    drive_service = build('drive', 'v3', credentials=credentials)
+    
+    # Upload to Google Drive
+    file_metadata = {
+        'name': file_name,
+        'description': title,
+        'mimeType': 'video/mp4'
+    }
+    
+    media = MediaFileUpload(temp_file, mimetype='video/mp4', resumable=True)
+    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id,webViewLink').execute()
+    
+    # Get Drive link
+    file_id = file.get('id')
+    web_link = file.get('webViewLink')
+    
+    logger.info(f"Video uploaded successfully to Google Drive!")
+    logger.info(f"File ID: {file_id}")
+    logger.info(f"Web link: {web_link}")
+    
+    # Set permissions to anyone with the link can view
+    permission = {
+        'type': 'anyone',
+        'role': 'reader'
+    }
+    drive_service.permissions().create(fileId=file_id, body=permission).execute()
+    logger.info("Set permissions: Anyone with the link can view")
+    
+    return {'file_id': file_id, 'temp_path': temp_file}
+
+def download_from_drive(file_id):
+    """Download video from Google Drive using service account authentication."""
+    logger.info(f"Downloading video from Google Drive (File ID: {file_id})...")
+    
+    # Use service account credentials
+    credentials_path = SERVICE_ACCOUNT_PATH
+    scopes = ['https://www.googleapis.com/auth/drive.readonly']
+    credentials = service_account.Credentials.from_service_account_file(credentials_path, scopes=scopes)
+    
+    # Build the Drive service
+    drive_service = build('drive', 'v3', credentials=credentials)
+    
+    # Get file metadata
+    file_metadata = drive_service.files().get(fileId=file_id).execute()
+    logger.info(f"Found file: {file_metadata.get('name')}")
+    
+    # Create temporary file to store the video
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+    
+    # Download the file content
+    request = drive_service.files().get_media(fileId=file_id)
+    
+    with open(temp_file, 'wb') as f:
+        # Stream the download to avoid memory issues with large files
+        downloader = MediaIoBaseDownload(f, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            logger.info(f"Download progress: {int(status.progress() * 100)}%")
+    
+    logger.info(f"Video downloaded to temporary file: {temp_file}")
+    return temp_file
+
+def upload_to_youtube(video_path, title, description, tags=None):
+    """Upload a video to YouTube using stored OAuth credentials."""
+    
+    # Check if video file exists
+    if not os.path.exists(video_path):
+        logger.error(f"Error: Video file not found at {video_path}")
+        return None
+    
+    try:
+        # Get authenticated YouTube service
+        youtube = get_authenticated_youtube_service()
+        
+        # Prepare video metadata
+        if tags is None:
+            tags = []
+        
+        # Add #Shorts tag for vertical videos
+        if "#Shorts" not in tags:
+            tags.append("#Shorts")
+        
+        # Set up the video metadata
+        body = {
+            "snippet": {
+                "title": title,
+                "description": description,
+                "tags": tags,
+                "categoryId": "22"  # People & Blogs category
+            },
+            "status": {
+                "privacyStatus": "public",
+                "selfDeclaredMadeForKids": False
+            }
+        }
+        
+        # Create upload request
+        media = MediaFileUpload(video_path, mimetype='video/mp4', resumable=True)
+        
+        # Execute the upload
+        logger.info(f"Uploading video to YouTube: {title}")
+        request = youtube.videos().insert(
+            part=",".join(body.keys()),
+            body=body,
+            media_body=media
+        )
+        
+        response = request.execute()
+        
+        # Get the video ID
+        video_id = response["id"]
+        logger.info(f"Upload complete! YouTube Video ID: {video_id}")
+        logger.info(f"YouTube URL: https://www.youtube.com/watch?v={video_id}")
+        
+        return video_id
+        
+    except Exception as e:
+        logger.error(f"An error occurred during upload: {str(e)}")
+        return None
+
+def get_authenticated_youtube_service():
+    """Get an authenticated YouTube API service with token persistence."""
+    credentials = None
+    
+    # Define OAuth scopes
+    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
+    
+    # Create client secrets file from hardcoded values
+    client_config = {
+        "installed": {
+            "client_id": YOUTUBE_CLIENT_ID,
+            "project_id": "youtube-uploader",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_secret": YOUTUBE_CLIENT_SECRET,
+            "redirect_uris": ["http://localhost"]
+        }
+    }
+    
+    # Try to find token file in multiple locations
+    token_paths = [
+        TOKEN_FILE,  # Default location
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), TOKEN_FILE),  # Same directory as this file
+        os.path.join(os.getcwd(), TOKEN_FILE),  # Current working directory
+        os.environ.get("YOUTUBE_TOKEN_PATH", "")  # Environment variable
+    ]
+    
+    token_file_path = None
+    for path in token_paths:
+        if path and os.path.exists(path):
+            token_file_path = path
+            logger.info(f"Found YouTube token file at: {path}")
+            break
+    
+    try:
+        client_secrets_file = tempfile.NamedTemporaryFile(delete=False, suffix='.json').name
+        with open(client_secrets_file, "w") as f:
+            json.dump(client_config, f)
+        
+        # Use a simple token JSON file
+        if token_file_path:
+            with open(token_file_path, 'r') as token_file:
+                token_data = json.load(token_file)
+                credentials = Credentials.from_authorized_user_info(token_data)
+                logger.info("Using stored YouTube credentials, no browser authentication needed")
+        
+        # If credentials don't exist or are invalid, we need to create new ones
+        if not credentials or not credentials.valid:
+            if credentials and credentials.expired and credentials.refresh_token:
+                logger.info("Refreshing expired credentials...")
+                credentials.refresh(Request())
+            else:
+                msg = "No valid YouTube credentials found. Need browser authentication (one-time setup)."
+                logger.error(msg)
+                raise RuntimeError(msg + " This requires a machine with a web browser.")
+        
+        return build("youtube", "v3", credentials=credentials)
+    
+    finally:
+        # Clean up client secrets
+        if 'client_secrets_file' in locals() and os.path.exists(client_secrets_file):
+            os.remove(client_secrets_file)
+
+# +++ End New HeyGen functions +++ 

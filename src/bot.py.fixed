@@ -8,7 +8,6 @@ import asyncio
 import sys
 import traceback
 import html
-import requests
 from pathlib import Path
 
 # Add the current directory to the Python path to enable imports
@@ -1367,96 +1366,15 @@ async def handle_heygen_confirmation(update: Update, context: ContextTypes.DEFAU
                 f"⏳ Отлично! Начинаю генерацию видео в HeyGen для ролика: {title} с использованием нарезанных аудиодорожек.\n\nЭто может занять несколько минут (до 10-15 мин)..."
             )
 
-        import asyncio
-        from src.platforms.workflow.integration import upload_to_drive, download_from_drive, upload_to_youtube
-        from src.platforms.workflow.generate_heygen_video import upload_audio_file, generate_video_with_multiple_avatars, check_video_status
+        from src.platforms.workflow.integration import create_video_from_cut_audio_parts
         
-        # Get the event loop
-        loop = asyncio.get_running_loop()
-        
-        # Get the HeyGen API key
-        api_key = os.environ.get("HEYGEN_API_KEY", "NzYzODNmNTI5ODYyNGMyYTg1NzFhNTNmOWY4M2Q4OTYtMTc0MDczMjczOQ==")
-        
-        # Define avatar IDs
-        avatar_1_id = "a7f27a8c3f954a54b599f04dff1ae4ac"
-        avatar_2_id = "21095f74dfe9401a85d044c207d19f2b"
-        
-        # Find all the audio parts in the directory
-        audio_paths = []
-        if os.path.isdir(cut_parts_dir_path):
-            audio_paths = sorted([
-                os.path.join(cut_parts_dir_path, f) for f in os.listdir(cut_parts_dir_path)
-                if f.startswith("part_") and f.endswith(".mp3")
-            ], key=lambda x: int(os.path.basename(x).split("_")[1].split(".")[0]))
-        
-        if not audio_paths:
-            await query.message.reply_text(f"❌ Ошибка: не найдены аудиофайлы в директории {cut_parts_dir_path}")
-            return
-        
-        # Define avatars to use (alternating)
-        avatar_ids = []
-        for i in range(len(audio_paths)):
-            avatar_ids.append(avatar_1_id if i % 2 == 0 else avatar_2_id)
-        
-        # Upload audio files and get asset IDs
-        audio_asset_ids = []
-        for audio_path in audio_paths:
-            asset_id = await loop.run_in_executor(None, lambda: upload_audio_file(api_key, audio_path))
-            if asset_id:
-                audio_asset_ids.append(asset_id)
-            else:
-                await query.message.reply_text(f"❌ Ошибка при загрузке аудиофайла: {audio_path}")
-                return
-        
-        # Generate video with the audio assets
-        video_id = await loop.run_in_executor(
-            None, 
-            lambda: generate_video_with_multiple_avatars(api_key, avatar_ids, audio_asset_ids)
+        loop = asyncio.get_event_loop()
+        final_url = await loop.run_in_executor(
+            None,
+            create_video_from_cut_audio_parts,
+            selected_reel_metadata,
+            cut_parts_dir_path
         )
-        
-        if not video_id:
-            await query.message.reply_text("❌ Ошибка при генерации видео в HeyGen")
-            return
-        
-        # Check video status until completed
-        final_url = None
-        status_message = await query.message.reply_text("⏳ Видео генерируется в HeyGen. Это может занять несколько минут...")
-        
-        # Poll for video status
-        url = f"https://api.heygen.com/v1/video_status.get?video_id={video_id}"
-        headers = {"X-Api-Key": api_key}
-        
-        max_retries = 60  # 10 min with 10s intervals
-        for attempt in range(max_retries):
-            try:
-                response = await loop.run_in_executor(None, lambda: requests.get(url, headers=headers))
-                if response.status_code == 200:
-                    result = response.json()
-                    status = result.get("data", {}).get("status")
-                    
-                    if status == "completed":
-                        final_url = result.get("data", {}).get("video_url")
-                        await status_message.edit_text(f"✅ Видео успешно сгенерировано! URL: {final_url}")
-                        break
-                    elif status == "failed":
-                        error = result.get("data", {}).get("error", "Unknown error")
-                        await status_message.edit_text(f"❌ Ошибка при генерации видео: {error}")
-                        return
-                    elif status in ["processing", "pending", "waiting"]:
-                        # Update status every few attempts to avoid too frequent message edits
-                        if attempt % 5 == 0:
-                            await status_message.edit_text(f"⏳ Статус видео: {status}. Проверка {attempt+1}/{max_retries}...")
-                    else:
-                        await status_message.edit_text(f"⚠️ Неизвестный статус: {status}")
-                        return
-                else:
-                    await status_message.edit_text(f"❌ Ошибка при проверке статуса: {response.status_code}")
-                    return
-            except Exception as e:
-                logger.error(f"Error checking video status: {e}")
-            
-            # Wait before next check
-            await asyncio.sleep(10)
         
         # Store the URL for later use
         context.user_data['generated_video_url'] = final_url
@@ -1478,7 +1396,7 @@ async def handle_heygen_confirmation(update: Update, context: ContextTypes.DEFAU
         if final_url:
             if "youtube.com" in final_url:
                 result_message_text = (
-                    f"✅ Видео для '{title}' успешно создано и загружено на YouTube!\\n\\n"
+                    f"✅ Видео для '{title}' успешно создано и загружено на YouTube!\n\n"
                     f"Ссылка: {final_url}"
                 )
                 # Add option to generate another video
@@ -1490,7 +1408,7 @@ async def handle_heygen_confirmation(update: Update, context: ContextTypes.DEFAU
                 await query.message.reply_text(result_message_text, reply_markup=reply_markup)
             else: # HeyGen URL
                 result_message_text = (
-                    f"✅ Видео для '{title}' успешно создано в HeyGen! Вы можете загрузить его на YouTube.\\n\\n"
+                    f"✅ Видео для '{title}' успешно создано в HeyGen! Вы можете загрузить его на YouTube.\n\n"
                     f"Ссылка на HeyGen видео: {final_url}"
                 )
                 # Show upload to YouTube option
@@ -1503,7 +1421,7 @@ async def handle_heygen_confirmation(update: Update, context: ContextTypes.DEFAU
                 await query.message.reply_text(result_message_text, reply_markup=reply_markup)
         else:
             result_message_text = (
-                f"❌ Произошла ошибка при генерации видео в HeyGen или загрузке на YouTube для '{title}'.\\n\\n"
+                f"❌ Произошла ошибка при генерации видео в HeyGen или загрузке на YouTube для '{title}'.\n\n"
                 "Проверьте логи для получения дополнительной информации."
             )
             keyboard = [[InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]]
@@ -1583,11 +1501,9 @@ async def handle_heygen_confirmation(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text(f"⏳ Загружаю видео '{title}' на YouTube...")
         
         # Upload the video to YouTube
-        import asyncio
         from src.platforms.workflow.integration import upload_to_drive, download_from_drive, upload_to_youtube
         
-        # Get the event loop
-        loop = asyncio.get_running_loop()
+        loop = asyncio.get_event_loop()
         
         # First upload to Drive
         drive_info = await loop.run_in_executor(

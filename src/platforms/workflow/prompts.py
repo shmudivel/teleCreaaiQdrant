@@ -39,7 +39,7 @@ MAIN CONTENT TO TRANSFORM:
 
 INSTRUCTIONS:
 1. Create a reel script based on the MAIN CONTENT.
-2. Make the script engaging, concise, and suitable for an Instagram reel (60-90 seconds).
+2. MAKE THE SCRIPT ENGAGING, CONCISE, AND SUITABLE FOR AN INSTAGRAM REEL (30-50 SECONDS).
 3. Keep the core message and educational value of the original content.
 4. Use direct, conversational language and include hook and call to action.
 5. The script should sound natural when read aloud.

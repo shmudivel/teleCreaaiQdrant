@@ -25,13 +25,16 @@ num_desired_cuts = 3 # We want to find 3 silences to make 4 parts
 
 # --- Buffer for end of words --- 
 end_of_word_buffer_ms = 500 # milliseconds, give words a bit more room before cutting
+# --- Buffer for start of words after silence ---
+start_of_word_buffer_ms = 500 # milliseconds, give words a bit more room after silence
 
 def cut_audio_file(input_file: str, output_dir: str, 
                   min_silence_len_param: int = 2200,
                   min_target_silence_duration: float = 2.2,
                   max_target_silence_duration: float = 10.0,
                   num_desired_cuts: int = 3,
-                  end_of_word_buffer_ms: int = 500) -> List[str]:
+                  end_of_word_buffer_ms: int = 500,
+                  start_of_word_buffer_ms: int = 500) -> List[str]:
     """
     Cut an audio file into parts based on silences.
     
@@ -43,6 +46,7 @@ def cut_audio_file(input_file: str, output_dir: str,
         max_target_silence_duration: Maximum duration of silence to consider for cutting (seconds).
         num_desired_cuts: Number of cuts to make (resulting in num_desired_cuts+1 parts).
         end_of_word_buffer_ms: Buffer in milliseconds to avoid cutting words off.
+        start_of_word_buffer_ms: Buffer in milliseconds to avoid cutting start of words after silence.
         
     Returns:
         A list of paths to the generated audio part files, or an empty list if cutting failed.
@@ -68,7 +72,8 @@ def cut_audio_file(input_file: str, output_dir: str,
             min_target_silence_duration,
             max_target_silence_duration,
             num_desired_cuts,
-            end_of_word_buffer_ms
+            end_of_word_buffer_ms,
+            start_of_word_buffer_ms
         )
 
         if len(segments_from_attempt) == num_desired_cuts + 1:
@@ -102,7 +107,7 @@ def cut_audio_file(input_file: str, output_dir: str,
     
     return generated_part_paths
 
-def perform_cut_with_threshold(audio_segment, current_silence_thresh, min_sil_len, min_target_dur, max_target_dur, desired_cuts_count, buffer_ms):
+def perform_cut_with_threshold(audio_segment, current_silence_thresh, min_sil_len, min_target_dur, max_target_dur, desired_cuts_count, end_buffer_ms, start_buffer_ms):
     logger.info(f"--- Attempting with silence threshold: {current_silence_thresh} dBFS ---")
     logger.info(f"Detecting silent parts (min_len: {min_sil_len}ms, thresh: {current_silence_thresh}dB)...")
     all_silent_parts_ms = detect_silence(
@@ -172,7 +177,7 @@ def perform_cut_with_threshold(audio_segment, current_silence_thresh, min_sil_le
         segments = []
         last_cut_end_ms = 0
         for i, cut_timing in enumerate(cut_times_ms):
-            potential_segment_end_ms = cut_timing['start_cut_at'] + buffer_ms
+            potential_segment_end_ms = cut_timing['start_cut_at'] + end_buffer_ms
             actual_silence_end_ms = cut_timing['end_resume_at']
             segment_end_ms = min(potential_segment_end_ms, actual_silence_end_ms)
             if segment_end_ms > last_cut_end_ms:
@@ -184,7 +189,8 @@ def perform_cut_with_threshold(audio_segment, current_silence_thresh, min_sil_le
                     segments.append(audio_segment[last_cut_end_ms:safe_segment_end_ms])
                 else:
                     logger.error(f"Error: Could not create valid segment {i+1} for threshold {current_silence_thresh}dB. Skipping this cut point.")
-            last_cut_end_ms = cut_timing['end_resume_at']
+            # Apply start buffer for the next segment by stepping back from the end of silence
+            last_cut_end_ms = max(0, cut_timing['end_resume_at'] - start_buffer_ms)
         segments.append(audio_segment[last_cut_end_ms:])
         
         segments = [s for s in segments if len(s) > 0] # Ensure no empty segments
@@ -211,6 +217,7 @@ if __name__ == "__main__":
     max_target_silence_duration = 10.0  # seconds
     num_desired_cuts = 3 # We want to find 3 silences to make 4 parts
     end_of_word_buffer_ms = 500 # milliseconds, give words a bit more room before cutting
+    start_of_word_buffer_ms = 500 # milliseconds, give words a bit more room after silence
     
     # Call the function with the default parameters
     cut_audio_file(
@@ -220,5 +227,6 @@ if __name__ == "__main__":
         min_target_silence_duration=min_target_silence_duration,
         max_target_silence_duration=max_target_silence_duration,
         num_desired_cuts=num_desired_cuts,
-        end_of_word_buffer_ms=end_of_word_buffer_ms
+        end_of_word_buffer_ms=end_of_word_buffer_ms,
+        start_of_word_buffer_ms=start_of_word_buffer_ms
     )

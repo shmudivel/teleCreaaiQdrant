@@ -3,7 +3,7 @@ from pydub import AudioSegment
 from pydub.silence import detect_silence
 
 # Path to the audio file
-input_file = "/Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/tests/big_text_to_reels/elevenlabs_audio_4_способа_использовать_ИИ_о_которых_вы_не_дога.mp3"
+input_file = "/Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/tests/big_text_to_reels/13 - Как заставить ИИ работать как Месси: система против интуиции.mp3"
 output_dir = os.path.dirname(input_file)
 
 # --- Silence detection parameters ---
@@ -20,13 +20,15 @@ num_desired_cuts = 3 # We want to find 3 silences to make 4 parts
 
 # --- Buffer for end of words --- 
 end_of_word_buffer_ms = 500 # milliseconds, give words a bit more room before cutting
+# --- Buffer for start of words after silence ---
+start_of_word_buffer_ms = 500 # milliseconds, give words a bit more room after silence
 
 # Load the audio file
 print(f"Loading audio file: {input_file}")
 audio = AudioSegment.from_mp3(input_file)
 
 # Function to attempt cutting audio with a given threshold
-def perform_cut_with_threshold(audio_segment, current_silence_thresh, min_sil_len, min_target_dur, max_target_dur, desired_cuts_count, buffer_ms):
+def perform_cut_with_threshold(audio_segment, current_silence_thresh, min_sil_len, min_target_dur, max_target_dur, desired_cuts_count, end_buffer_ms, start_buffer_ms):
     print(f"\\n--- Attempting with silence threshold: {current_silence_thresh} dBFS ---")
     print(f"Detecting silent parts (min_len: {min_sil_len}ms, thresh: {current_silence_thresh}dB)...")
     all_silent_parts_ms = detect_silence(
@@ -96,7 +98,7 @@ def perform_cut_with_threshold(audio_segment, current_silence_thresh, min_sil_le
         segments = []
         last_cut_end_ms = 0
         for i, cut_timing in enumerate(cut_times_ms):
-            potential_segment_end_ms = cut_timing['start_cut_at'] + buffer_ms
+            potential_segment_end_ms = cut_timing['start_cut_at'] + end_buffer_ms
             actual_silence_end_ms = cut_timing['end_resume_at']
             segment_end_ms = min(potential_segment_end_ms, actual_silence_end_ms)
             if segment_end_ms > last_cut_end_ms:
@@ -108,7 +110,8 @@ def perform_cut_with_threshold(audio_segment, current_silence_thresh, min_sil_le
                     segments.append(audio_segment[last_cut_end_ms:safe_segment_end_ms])
                 else:
                     print(f"Error: Could not create valid segment {i+1} for threshold {current_silence_thresh}dB. Skipping this cut point.")
-            last_cut_end_ms = cut_timing['end_resume_at']
+            # Apply start buffer for the next segment by stepping back from the end of silence
+            last_cut_end_ms = max(0, cut_timing['end_resume_at'] - start_buffer_ms)
         segments.append(audio_segment[last_cut_end_ms:])
         
         segments = [s for s in segments if len(s) > 0] # Ensure no empty segments
@@ -136,7 +139,8 @@ for s_thresh_db in threshold_levels_db:
         min_target_silence_duration,
         max_target_silence_duration,
         num_desired_cuts, # Should be 3 for 4 parts
-        end_of_word_buffer_ms
+        end_of_word_buffer_ms,
+        start_of_word_buffer_ms
     )
 
     if len(segments_from_attempt) == num_desired_cuts + 1:

@@ -1,14 +1,14 @@
 class WorkflowTasks:
     """Tasks for content workflow from Google Docs to YouTube."""
     
-    def google_doc_to_reels_task(self, doc_url, output_dir=None, top_n=7):
+    def google_doc_to_reels_task(self, doc_url, output_dir=None, top_n=10):
         """
         Process a Google Doc and convert it to reels
         
         Args:
             doc_url: URL of the Google Doc to process
             output_dir: Directory to save output files (optional)
-            top_n: Number of top reels to select (default: 7)
+            top_n: Number of top reels to select (default: 10)
             
         Returns:
             Dictionary with paths to generated content

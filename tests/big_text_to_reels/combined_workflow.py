@@ -184,7 +184,7 @@ def create_reel_scripts(input_file: str, output_dir: str,
     logger.info(f"Reel scripts generated and saved to {output_dir}")
     return metadata_dir
 
-def pick_top_reels(metadata_dir: str, top_n: int = 7, api_key: Optional[str] = None) -> str:
+def pick_top_reels(metadata_dir: str, top_n: int = 10, api_key: Optional[str] = None) -> str:
     """Select top reels based on viral potential.
     
     Args:
@@ -730,7 +730,7 @@ def present_reels_for_selection(final_reels_dir: str) -> dict:
     # Get user selection
     while True:
         try:
-            selection = int(input("Enter the number of the reel to upload to YouTube (1-7): "))
+            selection = int(input("Enter the number of the reel to upload to YouTube (1-10): "))
             if 1 <= selection <= len(reel_files):
                 return reel_files[selection-1]['data']
             else:
@@ -831,7 +831,7 @@ def main():
         # Step 3: Pick top reels
         top_reels_dir = pick_top_reels(
             metadata_dir=metadata_dir,
-            top_n=7,
+            top_n=10,
             api_key=ANTHROPIC_API_KEY
         )
         

@@ -69,7 +69,7 @@ from src.platforms.workflow.integration import process_google_doc_to_reels
 results = process_google_doc_to_reels(
     doc_url="https://docs.google.com/document/d/YOUR_DOC_ID/edit",
     output_dir="output_folder",
-    top_n=7  # Number of top reels to select
+    top_n=10  # Number of top reels to select
 )
 
 # Access generated files

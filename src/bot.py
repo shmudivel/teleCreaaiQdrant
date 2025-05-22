@@ -148,12 +148,39 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
             return WAITING_FOR_VECTOR_DB_QUERY
             
         elif selection == "menu_workflow":
-            # Google Doc to YouTube workflow
+            # Google Doc to YouTube workflow - show two buttons for different workflows
+            keyboard = [
+                [InlineKeyboardButton("Генерация нескольких Reels с одного текста", callback_data="workflow_multiple_reels")],
+                [InlineKeyboardButton("Генерация одного видео с одного текста", callback_data="workflow_single_video")],
+                [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
             await query.edit_message_text(
-                "Пожалуйста, отправьте ссылку на Google Doc с контентом для создания YouTube видео 📄\n\n"
+                "Выберите тип генерации видео из Google Doc:",
+                reply_markup=reply_markup
+            )
+            
+            return ConversationHandler.END
+            
+        # Handle workflow selection buttons
+        elif selection == "workflow_multiple_reels":
+            # Original workflow for multiple reels
+            await query.edit_message_text(
+                "Пожалуйста, отправьте ссылку на Google Doc с контентом для создания нескольких YouTube видео 📄\n\n"
                 "Документ будет обработан и разделен на короткие видеоролики для YouTube."
             )
             context.user_data['flow'] = 'google_doc_to_youtube'
+            
+            return WAITING_FOR_URL
+            
+        elif selection == "workflow_single_video":
+            # New workflow for single video
+            await query.edit_message_text(
+                "Пожалуйста, отправьте ссылку на Google Doc с контентом для создания одного YouTube видео 📄\n\n"
+                "Документ будет обработан для создания одного цельного видео."
+            )
+            context.user_data['flow'] = 'google_doc_to_single_video'
             
             return WAITING_FOR_URL
             
@@ -211,6 +238,30 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await process_google_doc_for_youtube(update, context, text)
         
         # End the conversation after starting the workflow
+        return ConversationHandler.END
+    
+    elif context.user_data.get('flow') == 'google_doc_to_single_video':
+        # Single video flow - validate Google Doc URL
+        doc_id = extract_doc_id(text)
+        if not doc_id:
+            await update.message.reply_text(
+                "Пожалуйста, отправьте корректную ссылку на Google Doc с контентом 📄"
+            )
+            return WAITING_FOR_URL
+        
+        # Show coming soon message
+        keyboard = [
+            [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "🔜 Функция генерации одного видео находится в разработке и будет доступна в ближайшее время!\n\n"
+            "Пока вы можете использовать функцию генерации нескольких коротких видео.",
+            reply_markup=reply_markup
+        )
+        
+        # End the conversation after showing the message
         return ConversationHandler.END
     
     # Fallback for unexpected flow state
@@ -1716,6 +1767,7 @@ def main():
             CommandHandler("menu", menu_command),
             CommandHandler("restart", restart_command),
             CallbackQueryHandler(handle_menu_selection, pattern="^menu_"),
+            CallbackQueryHandler(handle_menu_selection, pattern="^workflow_multiple_reels$|^workflow_single_video$"),
             CallbackQueryHandler(menu_callback, pattern="^add_another_record$")
         ],
         states={

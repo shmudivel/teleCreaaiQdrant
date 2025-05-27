@@ -249,19 +249,10 @@ async def handle_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return WAITING_FOR_URL
         
-        # Show coming soon message
-        keyboard = [
-            [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Process the document for single video workflow
+        await process_google_doc_for_single_video(update, context, text)
         
-        await update.message.reply_text(
-            "🔜 Функция генерации одного видео находится в разработке и будет доступна в ближайшее время!\n\n"
-            "Пока вы можете использовать функцию генерации нескольких коротких видео.",
-            reply_markup=reply_markup
-        )
-        
-        # End the conversation after showing the message
+        # End the conversation after starting the workflow
         return ConversationHandler.END
     
     # Fallback for unexpected flow state
@@ -1744,6 +1735,99 @@ async def handle_heygen_confirmation(update: Update, context: ContextTypes.DEFAU
                  logger.info(f"Cleaned up cut audio parts directory on cancel: {cut_parts_dir_path}")
              except OSError as e:
                  logger.error(f"Error deleting cut_parts_dir_path {cut_parts_dir_path} on cancel: {e}")
+
+async def process_google_doc_for_single_video(update: Update, context: ContextTypes.DEFAULT_TYPE, doc_url: str):
+    """Process a Google Doc for single YouTube video using the workflow platform."""
+    # Send processing message
+    processing_message = await update.message.reply_text("⏳ Обрабатываю документ и создаю видео. Это может занять некоторое время...")
+    
+    try:
+        # Get the workflow tasks
+        from src.platforms.factory import PlatformFactory
+        workflow_tasks = PlatformFactory.get_platform_tasks("workflow")
+        
+        # Create a timestamp-based output directory
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = f"output_single_video_{timestamp}"
+        
+        # Log process start
+        logger.info(f"Starting Google Doc to single YouTube video workflow for {doc_url} with output to {output_dir}")
+        
+        # Process the document in a background task
+        import asyncio
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: workflow_tasks.google_doc_to_single_video_task(doc_url, output_dir)
+        )
+        
+        # Process completed
+        keyboard = [
+            [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Check if video generation was successful
+        video_success = result.get("video_generation_success", False) if result else False
+        
+        if video_success:
+            # Update the processing message with success status
+            await processing_message.edit_text(
+                "✅ Обработка документа завершена!\n\n"
+                "📹 Видео успешно сгенерировано с помощью ElevenLabs и HeyGen\n"
+                "🎬 Видео загружено на YouTube\n\n"
+                "Процесс включал:\n"
+                "1. Анализ документа\n"
+                "2. Создание сценария\n"
+                "3. Редактирование и оптимизация\n"
+                "4. Генерация аудио с ElevenLabs\n"
+                "5. Создание видео с HeyGen\n"
+                "6. Загрузка на YouTube",
+                reply_markup=reply_markup
+            )
+        else:
+            # Update the processing message with partial success/failure status
+            await processing_message.edit_text(
+                "⚠️ Обработка документа завершена с ошибками!\n\n"
+                "✅ Сценарий успешно создан и оптимизирован\n"
+                "❌ Ошибка при генерации видео или загрузке на YouTube\n\n"
+                "Проверьте:\n"
+                "- Настройки ElevenLabs API\n"
+                "- Настройки HeyGen API\n"
+                "- Настройки YouTube OAuth\n"
+                "- Логи приложения для деталей",
+                reply_markup=reply_markup
+            )
+        
+        # Return success
+        return True
+        
+    except Exception as e:
+        # Log the error
+        logger.error(f"Error processing Google Doc for single video: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # Notify the user
+        keyboard = [
+            [InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        try:
+            await processing_message.edit_text(
+                f"❌ Произошла ошибка при обработке документа:\n{str(e)}",
+                reply_markup=reply_markup
+            )
+        except Exception:
+            await update.message.reply_text(
+                f"❌ Произошла ошибка при обработке документа:\n{str(e)}",
+                reply_markup=reply_markup
+            )
+        
+        # Return failure
+        return False
 
 def main():
     """Start the bot."""

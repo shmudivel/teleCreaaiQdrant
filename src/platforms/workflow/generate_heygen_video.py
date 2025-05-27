@@ -3,6 +3,8 @@ import json
 import base64
 import os
 import time
+import logging
+import traceback
 
 def upload_audio_file(api_key, audio_path):
     """Upload an audio file to HeyGen and get the asset ID."""
@@ -85,15 +87,37 @@ def generate_video_with_multiple_avatars(api_key, avatar_ids, audio_asset_ids):
         print(f"Error: {response.status_code} - {response.text}")
         return None
 
-def check_video_status(api_key, video_id):
+def check_video_status(api_key, video_id, max_wait_minutes=15):
+    """Check video generation status with timeout.
+    
+    Args:
+        api_key: HeyGen API key
+        video_id: Video ID to check
+        max_wait_minutes: Maximum time to wait for completion (default: 15 minutes)
+    
+    Returns:
+        Video URL if completed successfully, None if failed or timed out
+    """
     if not video_id:
         print("No video ID provided.")
-        return
+        return None
     
     url = f"https://api.heygen.com/v1/video_status.get?video_id={video_id}"
     headers = {"X-Api-Key": api_key}
     
+    start_time = time.time()
+    max_wait_seconds = max_wait_minutes * 60
+    check_count = 0
+    
     while True:
+        check_count += 1
+        elapsed_time = time.time() - start_time
+        
+        # Check if we've exceeded the maximum wait time
+        if elapsed_time > max_wait_seconds:
+            print(f"Timeout: Video generation did not complete within {max_wait_minutes} minutes. Total checks: {check_count}")
+            return None
+        
         response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
@@ -102,21 +126,21 @@ def check_video_status(api_key, video_id):
             
             if status == "completed":
                 video_url = result.get("data", {}).get("video_url")
-                print(f"Video generation completed. Video URL: {video_url}")
-                break
+                print(f"Video generation completed after {elapsed_time:.1f} seconds ({check_count} checks). Video URL: {video_url}")
+                return video_url
             elif status == "failed":
                 error = result.get("data", {}).get("error", "Unknown error")
-                print(f"Video generation failed: {error}")
-                break
+                print(f"Video generation failed after {elapsed_time:.1f} seconds: {error}")
+                return None
             elif status == "processing" or status == "pending" or status == "waiting":
-                print(f"Video status: {status}. Checking again in 10 seconds...")
+                print(f"Video status: {status}. Elapsed: {elapsed_time:.1f}s, Check #{check_count}. Next check in 10 seconds...")
                 time.sleep(10)
             else:
                 print(f"Unknown status: {status}")
-                break
+                return None
         else:
             print(f"Error checking status: {response.status_code} - {response.text}")
-            break
+            return None
 
 def main():
     # API key
@@ -151,7 +175,11 @@ def main():
     video_id = generate_video_with_multiple_avatars(api_key, avatar_ids, audio_asset_ids)
     
     # Step 3: Check status
-    check_video_status(api_key, video_id)
+    video_url = check_video_status(api_key, video_id)
+    if video_url:
+        print(f"Video URL: {video_url}")
+    else:
+        print("Video generation failed or timed out.")
 
 if __name__ == "__main__":
     main() 

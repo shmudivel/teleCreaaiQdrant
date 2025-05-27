@@ -108,41 +108,76 @@ def create_claude_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 @exponential_backoff_retry()
-def call_claude_api(client, model, prompt, system=None, max_tokens=1000, temperature=0.0) -> str:
-    """
-    Call the Claude API with retry logic.
+def call_claude_api(
+    client,
+    model,
+    prompt,
+    system=None,
+    max_tokens=4000,
+    temperature=0.7,
+    stream=None  # Add stream parameter that auto-determines based on max_tokens
+):
+    """Call Claude API with retry logic."""
     
-    Args:
-        client: Anthropic client
-        model: Model name
-        prompt: User prompt
-        system: System prompt
-        max_tokens: Maximum tokens to generate
-        temperature: Temperature for generation
-        
-    Returns:
-        Generated text response
-    """
-    messages = [{"role": "user", "content": prompt}]
+    # Automatically use streaming for large token requests (> 20000)
+    # This prevents timeouts for long operations
+    use_streaming = stream if stream is not None else (max_tokens > 20000)
     
-    response = client.messages.create(
-        model=model,
-        messages=messages,
-        system=system,
-        max_tokens=max_tokens,
-        temperature=temperature
-    )
-    
-    # Extract text from response
-    result = ""
-    if hasattr(response.content, '__iter__') and not isinstance(response.content, str):
-        for item in response.content:
-            if hasattr(item, 'text') and item.text:
-                result += item.text
+    if use_streaming:
+        # Use streaming for large responses
+        try:
+            response_stream = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                stream=True
+            )
+            
+            # Collect all text chunks from the stream
+            content = ""
+            for chunk in response_stream:
+                if chunk.type == "content_block_delta" and hasattr(chunk, "delta") and hasattr(chunk.delta, "text"):
+                    content += chunk.delta.text
+            
+            return content
+            
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            raise
     else:
-        result = str(response.content)
-    
-    return result
+        # Use non-streaming for smaller responses
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+            
+            # Extract text content from the response
+            if hasattr(response, "content") and len(response.content) > 0:
+                content_block = response.content[0]
+                if hasattr(content_block, "text"):
+                    return content_block.text
+            
+            return ""
+            
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            raise
 
 # Rate limiting context manager to avoid hitting API limits
 class RateLimiter:

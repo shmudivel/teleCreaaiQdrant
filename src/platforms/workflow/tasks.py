@@ -29,4 +29,19 @@ class WorkflowTasks:
         """
         from .integration import process_selected_reel
         
-        return process_selected_reel(metadata) 
+        return process_selected_reel(metadata)
+        
+    def google_doc_to_single_video_task(self, doc_url, output_dir=None):
+        """
+        Process a Google Doc and convert it to a single video
+        
+        Args:
+            doc_url: URL of the Google Doc to process
+            output_dir: Directory to save output files (optional)
+            
+        Returns:
+            Dictionary with paths to generated content
+        """
+        from .single_video.integration_for_single_video import process_google_doc_to_single_video
+        
+        return process_google_doc_to_single_video(doc_url, output_dir) 

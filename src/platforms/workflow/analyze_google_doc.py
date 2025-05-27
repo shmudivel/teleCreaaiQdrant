@@ -12,8 +12,8 @@ from .api_utils import create_claude_client, call_claude_api, exponential_backof
 # Google API scopes needed
 SCOPES = ['https://www.googleapis.com/auth/documents.readonly']
 
-# Hard-coded Anthropic API key from env. file
-ANTHROPIC_API_KEY = "REMOVED_API_KEY"
+# Get Anthropic API key from environment variables
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 def extract_doc_id_from_url(url):
     """Extract the document ID from a Google Docs URL."""

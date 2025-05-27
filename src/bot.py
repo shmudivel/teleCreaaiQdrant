@@ -1417,11 +1417,11 @@ async def handle_heygen_confirmation(update: Update, context: ContextTypes.DEFAU
         loop = asyncio.get_running_loop()
         
         # Get the HeyGen API key
-        api_key = os.environ.get("HEYGEN_API_KEY", "NzYzODNmNTI5ODYyNGMyYTg1NzFhNTNmOWY4M2Q4OTYtMTc0MDczMjczOQ==")
+        api_key = os.environ.get("HEYGEN_API_KEY")
         
-        # Define avatar IDs
-        avatar_1_id = "a7f27a8c3f954a54b599f04dff1ae4ac"
-        avatar_2_id = "21095f74dfe9401a85d044c207d19f2b"
+        # Get avatar IDs from environment variables
+        avatar_1_id = os.environ.get("HEYGEN_AVATAR_ID_1")
+        avatar_2_id = os.environ.get("HEYGEN_AVATAR_ID_2")
         
         # Find all the audio parts in the directory
         audio_paths = []

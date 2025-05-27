@@ -18,8 +18,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Hardcoded API key - Updated to a working key
-API_KEY = "REMOVED_API_KEY"
+# Get API key from environment variables
+API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 class ReelGenerator:
     """Class to generate Instagram reel scripts from divided text."""

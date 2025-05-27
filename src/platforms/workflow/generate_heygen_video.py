@@ -143,12 +143,12 @@ def check_video_status(api_key, video_id, max_wait_minutes=15):
             return None
 
 def main():
-    # API key
-    api_key = "NzYzODNmNTI5ODYyNGMyYTg1NzFhNTNmOWY4M2Q4OTYtMTc0MDczMjczOQ=="
+    # Get API key from environment variables
+    api_key = os.environ.get("HEYGEN_API_KEY")
     
-    # Avatar IDs
-    avatar_1_id = "a7f27a8c3f954a54b599f04dff1ae4ac"
-    avatar_2_id = "21095f74dfe9401a85d044c207d19f2b"
+    # Get Avatar IDs from environment variables
+    avatar_1_id = os.environ.get("HEYGEN_AVATAR_ID_1", "a7f27a8c3f954a54b599f04dff1ae4ac")
+    avatar_2_id = os.environ.get("HEYGEN_AVATAR_ID_2", "21095f74dfe9401a85d044c207d19f2b")
     
     # Audio file paths
     base_path = "/Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/tests/test_heygen_4_angles_api/"

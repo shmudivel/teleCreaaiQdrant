@@ -54,11 +54,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants for API keys and paths
-SERVICE_ACCOUNT_PATH = os.environ.get("GOOGLE_SERVICE_ACCOUNT_PATH", "./bustling-folio-439811-h8-539f8ab05fa7.json")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY", "NzYzODNmNTI5ODYyNGMyYTg1NzFhNTNmOWY4M2Q4OTYtMTc0MDczMjczOQ==")
-YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "REMOVED_GOOGLE_CLIENT_ID")
-YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "REMOVED_GOOGLE_CLIENT_SECRET")
+SERVICE_ACCOUNT_PATH = os.environ.get("GOOGLE_SERVICE_ACCOUNT_PATH")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+HEYGEN_API_KEY = os.environ.get("HEYGEN_API_KEY")
+YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID")
+YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET")
 TOKEN_FILE = "youtube_token.json"
 # Add ElevenLabs constants
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
@@ -66,8 +66,8 @@ ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID")
 
 # +++ HeyGen Specific Constants for Audio Asset Workflow +++
 # Using the same API Key as defined above for HEYGEN_API_KEY
-HEYGEN_AVATAR_ID_1 = "a7f27a8c3f954a54b599f04dff1ae4ac"  # From generate_heygen_video.py
-HEYGEN_AVATAR_ID_2 = "21095f74dfe9401a85d044c207d19f2b"  # From generate_heygen_video.py
+HEYGEN_AVATAR_ID_1 = os.environ.get("HEYGEN_AVATAR_ID_1")
+HEYGEN_AVATAR_ID_2 = os.environ.get("HEYGEN_AVATAR_ID_2")
 # +++ End HeyGen Specific Constants +++
 
 # +++ Default cutting parameters (can be made configurable later) +++

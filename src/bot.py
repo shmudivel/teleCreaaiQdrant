@@ -31,8 +31,10 @@ logger = logging.getLogger(__name__)
     WAITING_FOR_URL, 
     WAITING_FOR_TRANSCRIPTION,
     WAITING_FOR_PLATFORM_SELECTION,
-    WAITING_FOR_VECTOR_DB_QUERY
-) = range(4)
+    WAITING_FOR_VECTOR_DB_QUERY,
+    SCRIPT_EDITING_AWAITING_ACTION,
+    SCRIPT_EDITING_AWAITING_SCRIPT
+) = range(6)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
@@ -1829,6 +1831,482 @@ async def process_google_doc_for_single_video(update: Update, context: ContextTy
         # Return failure
         return False
 
+# ============ NEW SCRIPT EDITING CONVERSATION HANDLER ============
+
+async def start_script_editing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start the script editing conversation flow when a reel is selected."""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        # Get the selected reel index from the callback data
+        reel_idx = int(query.data.split('_')[1])
+        
+        # Get the reels list from user_data
+        reels = context.user_data.get('reels', [])
+        final_reels_dir = context.user_data.get('final_reels_dir')
+
+        if not reels or reel_idx >= len(reels):
+            await query.edit_message_text(
+                "❌ Выбранный ролик не найден. Пожалуйста, попробуйте снова.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return ConversationHandler.END
+
+        if not final_reels_dir:
+            logger.error("final_reels_dir (optimized_scripts_dir) not found in user_data for audio generation.")
+            await query.edit_message_text(
+                "❌ Ошибка: не удалось определить директорию для аудиофайла. Пожалуйста, попробуйте снова.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return ConversationHandler.END
+
+        # Get the selected reel metadata
+        selected_reel_metadata = reels[reel_idx]['data']
+        title = selected_reel_metadata.get('title', 'Без названия')
+        heygen_script = selected_reel_metadata.get('heygen_script', '')
+
+        if not heygen_script:
+            logger.error(f"No heygen_script found for reel: {title}")
+            await query.edit_message_text(
+                f"❌ Ошибка: отсутствует оптимизированный скрипт для ролика '{title}'. Невозможно сгенерировать аудио.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return ConversationHandler.END
+
+        # Store the current script data in user_data for the editing session
+        context.user_data['editing_reel_metadata'] = selected_reel_metadata
+        context.user_data['editing_reel_idx'] = reel_idx
+        context.user_data['current_script'] = heygen_script
+        context.user_data['editing_title'] = title
+        context.user_data['editing_audio_preview_dir'] = os.path.join(final_reels_dir, "audio_previews")
+        
+        # Update the message to show initial audio generation status
+        await query.edit_message_text(f"⏳ Генерирую первое аудио превью для '{title}' с помощью ElevenLabs...")
+
+        # Generate initial audio preview
+        await generate_audio_preview_and_send(update, context, heygen_script, title, is_initial=True)
+        
+        return SCRIPT_EDITING_AWAITING_ACTION
+        
+    except Exception as e:
+        logger.error(f"Error in start_script_editing: {str(e)}\n{traceback.format_exc()}")
+        await query.edit_message_text(
+            f"❌ Произошла критическая ошибка при подготовке аудио: {str(e)}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+            ]])
+        )
+        return ConversationHandler.END
+
+async def generate_audio_preview_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE, script: str, title: str, is_initial: bool = False):
+    """Generate audio preview and send it to the user with action buttons."""
+    from src.platforms.workflow.integration import generate_audio_with_elevenlabs
+    
+    try:
+        # Setup audio preview directory
+        audio_preview_base_dir = context.user_data.get('editing_audio_preview_dir')
+        Path(audio_preview_base_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Generate audio with ElevenLabs
+        loop = asyncio.get_event_loop()
+        audio_file_path = await loop.run_in_executor(
+            None,
+            generate_audio_with_elevenlabs,
+            script,
+            audio_preview_base_dir,
+            title
+        )
+
+        if audio_file_path:
+            # Store current audio path for cleanup
+            context.user_data['current_audio_path'] = audio_file_path
+            
+            # Create keyboard with action buttons
+            keyboard = [
+                [InlineKeyboardButton("🚀 Генерировать HeyGen видео", callback_data="script_edit_generate_video")],
+                [InlineKeyboardButton("✏️ Редактировать скрипт", callback_data="script_edit_edit_script")],
+                [InlineKeyboardButton("❌ Отмена", callback_data="script_edit_cancel")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Send the audio file to the user
+            with open(audio_file_path, 'rb') as audio_file_preview:
+                if is_initial:
+                    # For initial audio, send to the chat with the message where reel was selected
+                    if hasattr(update, 'callback_query') and update.callback_query:
+                        await context.bot.send_audio(
+                            chat_id=update.callback_query.message.chat_id,
+                            audio=InputFile(audio_file_preview, filename=os.path.basename(audio_file_path)),
+                            caption=f"🎙️ Аудио превью для '{title}' готово. Прослушайте и выберите действие:",
+                            title=title,
+                            reply_markup=reply_markup
+                        )
+                    else:
+                        await update.message.reply_audio(
+                            audio=InputFile(audio_file_preview, filename=os.path.basename(audio_file_path)),
+                            caption=f"🎙️ Аудио превью для '{title}' готово. Прослушайте и выберите действие:",
+                            title=title,
+                            reply_markup=reply_markup
+                        )
+                else:
+                    # For updated audio, reply to the current message
+                    await update.message.reply_audio(
+                        audio=InputFile(audio_file_preview, filename=os.path.basename(audio_file_path)),
+                        caption=f"🎙️ Обновленное аудио превью для '{title}' готово. Прослушайте и выберите действие:",
+                        title=title,
+                        reply_markup=reply_markup
+                    )
+        else:
+            # Audio generation failed
+            error_message = f"❌ Не удалось сгенерировать аудио для '{title}'. Пожалуйста, проверьте логи."
+            keyboard = [[InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if is_initial and hasattr(update, 'callback_query'):
+                await update.callback_query.edit_message_text(error_message, reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(error_message, reply_markup=reply_markup)
+
+    except Exception as e:
+        logger.error(f"Error generating audio preview: {str(e)}")
+        error_message = f"❌ Произошла ошибка при генерации аудио: {str(e)}"
+        keyboard = [[InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if is_initial and hasattr(update, 'callback_query'):
+            await update.callback_query.edit_message_text(error_message, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(error_message, reply_markup=reply_markup)
+
+async def handle_script_editing_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle user actions in the script editing flow."""
+    query = update.callback_query
+    await query.answer()
+    
+    action = query.data
+    
+    if action == "script_edit_generate_video":
+        # User wants to proceed with HeyGen video generation
+        return await proceed_to_heygen_generation(update, context)
+        
+    elif action == "script_edit_edit_script":
+        # User wants to edit the script
+        return await request_script_edit(update, context)
+        
+    elif action == "script_edit_cancel":
+        # User wants to cancel
+        return await cancel_script_editing(update, context)
+    
+    return SCRIPT_EDITING_AWAITING_ACTION
+
+async def proceed_to_heygen_generation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Proceed to HeyGen video generation using the current script."""
+    query = update.callback_query
+    
+    try:
+        # Get stored data
+        selected_reel_metadata = context.user_data.get('editing_reel_metadata')
+        current_script = context.user_data.get('current_script')
+        title = context.user_data.get('editing_title')
+        current_audio_path = context.user_data.get('current_audio_path')
+        
+        if not all([selected_reel_metadata, current_script, title]):
+            await query.edit_message_caption(
+                caption="❌ Ошибка: данные сессии потеряны. Пожалуйста, начните заново.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return ConversationHandler.END
+        
+        # Update metadata with the final script
+        selected_reel_metadata['heygen_script'] = current_script
+        
+        # Store data for HeyGen generation (reuse existing confirmation handler)
+        context.user_data['selected_reel_for_heygen'] = selected_reel_metadata
+        context.user_data['generated_audio_path'] = current_audio_path
+        
+        # Calculate cut parts directory path
+        if current_audio_path:
+            audio_preview_base_dir = context.user_data.get('editing_audio_preview_dir')
+            audio_filename_base = Path(os.path.basename(current_audio_path)).stem
+            parts_subdir_name = f"parts_{audio_filename_base}"
+            cut_parts_dir_path = os.path.join(audio_preview_base_dir, parts_subdir_name)
+            context.user_data['cut_parts_dir_path'] = cut_parts_dir_path
+        
+        # Update caption to show processing
+        await query.edit_message_caption(
+            caption=f"⏳ Отлично! Начинаю генерацию видео в HeyGen для ролика: {title} с использованием финального скрипта.\n\nЭто может занять несколько минут (до 10-15 мин)...",
+            reply_markup=None
+        )
+        
+        # Clear editing session data
+        context.user_data.pop('editing_reel_metadata', None)
+        context.user_data.pop('editing_reel_idx', None)
+        context.user_data.pop('current_script', None)
+        context.user_data.pop('editing_title', None)
+        context.user_data.pop('editing_audio_preview_dir', None)
+        context.user_data.pop('current_audio_path', None)
+        
+        # Reuse existing HeyGen confirmation handler
+        # Create a fake callback query for the existing handler
+        fake_query = type('obj', (object,), {
+            'data': 'heygen_proceed_audio_parts',
+            'answer': query.answer,
+            'edit_message_caption': query.edit_message_caption,
+            'message': query.message
+        })()
+        
+        fake_update = type('obj', (object,), {
+            'callback_query': fake_query
+        })()
+        
+        await handle_heygen_confirmation(fake_update, context)
+        
+        return ConversationHandler.END
+        
+    except Exception as e:
+        logger.error(f"Error proceeding to HeyGen generation: {str(e)}")
+        await query.edit_message_caption(
+            caption=f"❌ Произошла ошибка: {str(e)}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+            ]])
+        )
+        return ConversationHandler.END
+
+async def request_script_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Request script editing from the user."""
+    query = update.callback_query
+    
+    try:
+        current_script = context.user_data.get('current_script', '')
+        title = context.user_data.get('editing_title', '')
+        
+        if not current_script:
+            await query.edit_message_caption(
+                caption="❌ Ошибка: текущий скрипт не найден.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return ConversationHandler.END
+        
+        # Remove buttons from audio message
+        await query.edit_message_caption(
+            caption=f"📝 Редактирование скрипта для '{title}'. Ожидаю ваши изменения...",
+            reply_markup=None
+        )
+        
+        # Send current script for editing
+        script_message = (
+            f"📄 Текущий скрипт для '{title}':\n\n"
+            f"```\n{current_script}\n```\n\n"
+            f"✏️ Отредактируйте скрипт и отправьте его обратно. "
+            f"После отправки я сгенерирую новое аудио превью."
+        )
+        
+        await query.message.reply_text(
+            script_message,
+            parse_mode='Markdown'
+        )
+        
+        return SCRIPT_EDITING_AWAITING_SCRIPT
+        
+    except Exception as e:
+        logger.error(f"Error requesting script edit: {str(e)}")
+        await query.edit_message_caption(
+            caption=f"❌ Произошла ошибка: {str(e)}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+            ]])
+        )
+        return ConversationHandler.END
+
+async def handle_script_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the updated script from the user."""
+    user_message = update.message.text
+    title = context.user_data.get('editing_title', '')
+    
+    if not user_message:
+        await update.message.reply_text(
+            "❌ Пожалуйста, отправьте текст скрипта."
+        )
+        return SCRIPT_EDITING_AWAITING_SCRIPT
+    
+    try:
+        # Update the current script
+        context.user_data['current_script'] = user_message
+        
+        # Clean up previous audio file
+        previous_audio_path = context.user_data.get('current_audio_path')
+        if previous_audio_path and os.path.exists(previous_audio_path):
+            try:
+                os.remove(previous_audio_path)
+                logger.info(f"Cleaned up previous audio file: {previous_audio_path}")
+            except OSError as e:
+                logger.error(f"Error deleting previous audio file: {e}")
+        
+        # Send processing message
+        processing_message = await update.message.reply_text(
+            f"⏳ Генерирую обновленное аудио превью для '{title}' с новым скриптом..."
+        )
+        
+        # Generate new audio preview
+        await generate_audio_preview_and_send(update, context, user_message, title, is_initial=False)
+        
+        # Remove processing message
+        await processing_message.delete()
+        
+        return SCRIPT_EDITING_AWAITING_ACTION
+        
+    except Exception as e:
+        logger.error(f"Error handling script update: {str(e)}")
+        await update.message.reply_text(
+            f"❌ Произошла ошибка при обработке обновленного скрипта: {str(e)}"
+        )
+        return SCRIPT_EDITING_AWAITING_SCRIPT
+
+async def cancel_script_editing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel the script editing session."""
+    query = update.callback_query
+    
+    try:
+        # Clean up audio files
+        current_audio_path = context.user_data.get('current_audio_path')
+        if current_audio_path and os.path.exists(current_audio_path):
+            try:
+                os.remove(current_audio_path)
+                logger.info(f"Cleaned up audio file on cancel: {current_audio_path}")
+            except OSError as e:
+                logger.error(f"Error deleting audio file on cancel: {e}")
+        
+        # Clear editing session data
+        context.user_data.pop('editing_reel_metadata', None)
+        context.user_data.pop('editing_reel_idx', None)
+        context.user_data.pop('current_script', None)
+        context.user_data.pop('editing_title', None)
+        context.user_data.pop('editing_audio_preview_dir', None)
+        context.user_data.pop('current_audio_path', None)
+        
+        await query.edit_message_caption(
+            caption="❌ Редактирование скрипта отменено. Аудиофайлы удалены.",
+            reply_markup=None
+        )
+        
+        # Show options to continue
+        keyboard = [
+            [InlineKeyboardButton("🔄 Выбрать другой ролик", callback_data="choose_another_reel")],
+            [InlineKeyboardButton("🏠 Вернуться в главное меню", callback_data="menu_back")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.reply_text(
+            "Что делаем дальше?",
+            reply_markup=reply_markup
+        )
+        
+        return ConversationHandler.END
+        
+    except Exception as e:
+        logger.error(f"Error canceling script editing: {str(e)}")
+        await query.edit_message_caption(
+            caption=f"❌ Произошла ошибка при отмене: {str(e)}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+            ]])
+        )
+        return ConversationHandler.END
+
+async def script_editing_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /cancel command during script editing."""
+    await update.message.reply_text("Редактирование скрипта отменено.")
+    
+    # Clean up
+    current_audio_path = context.user_data.get('current_audio_path')
+    if current_audio_path and os.path.exists(current_audio_path):
+        try:
+            os.remove(current_audio_path)
+        except OSError:
+            pass
+    
+    # Clear editing session data
+    context.user_data.pop('editing_reel_metadata', None)
+    context.user_data.pop('editing_reel_idx', None)
+    context.user_data.pop('current_script', None)
+    context.user_data.pop('editing_title', None)
+    context.user_data.pop('editing_audio_preview_dir', None)
+    context.user_data.pop('current_audio_path', None)
+    
+    return ConversationHandler.END
+
+# ============ END NEW SCRIPT EDITING CONVERSATION HANDLER ============
+
+async def handle_choose_another_reel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the 'choose another reel' callback to show reel selection again."""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        # Get the reels list from user_data
+        reels = context.user_data.get('reels', [])
+        generated_video_indices = context.user_data.get('generated_video_indices', [])
+        
+        if not reels:
+            await query.edit_message_text(
+                "❌ Список роликов не найден. Пожалуйста, начните процесс заново.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return
+        
+        # Filter out already generated reels
+        available_reels = [(i, reel) for i, reel in enumerate(reels) if i not in generated_video_indices]
+        
+        if not available_reels:
+            await query.edit_message_text(
+                "Все доступные ролики уже были обработаны. Вы можете начать новый процесс.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+                ]])
+            )
+            return
+            
+        # Create keyboard with available reels
+        keyboard = []
+        for i, reel in available_reels:
+            title = reel['data'].get('title', f'Ролик {i+1}')
+            # Limit title length to avoid button overflow
+            if len(title) > 40:
+                title = title[:37] + "..."
+            keyboard.append([InlineKeyboardButton(f"{i+1}. {title}", callback_data=f"reel_{i}")])
+        
+        # Add back button
+        keyboard.append([InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "Выберите ролик для обработки:",
+            reply_markup=reply_markup
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in handle_choose_another_reel: {str(e)}")
+        await query.edit_message_text(
+            f"❌ Произошла ошибка: {str(e)}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Вернуться в главное меню 🏠", callback_data="menu_back")
+            ]])
+        )
+
 def main():
     """Start the bot."""
     logger.info("Starting bot...")
@@ -1889,6 +2367,36 @@ def main():
     # Add conversation handler
     application.add_handler(conv_handler)
     
+    # Add new script editing conversation handler
+    script_editing_conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(start_script_editing, pattern="^reel_\d+$")
+        ],
+        states={
+            SCRIPT_EDITING_AWAITING_ACTION: [
+                CallbackQueryHandler(handle_script_editing_action, pattern="^script_edit_")
+            ],
+            SCRIPT_EDITING_AWAITING_SCRIPT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_script_update)
+            ]
+        },
+        fallbacks=[
+            CommandHandler("cancel", script_editing_cancel_command),
+            CommandHandler("menu", menu_command),
+            CommandHandler("start", start),
+            CommandHandler("restart", restart_command),
+            CallbackQueryHandler(handle_back_to_menu, pattern="^menu_back$|^back_to_menu$"),
+            CallbackQueryHandler(handle_back_to_menu, pattern="^choose_another_reel$"),
+            MessageHandler(filters.ALL, unknown_text)
+        ],
+        name="script_editing_conversation",
+        persistent=False,
+        conversation_timeout=600  # 10 minutes timeout for script editing
+    )
+    
+    # Add script editing conversation handler
+    application.add_handler(script_editing_conv_handler)
+    
     # Add callback handlers - note that these won't be reached if the conversation handler
     # is active, as it has higher priority
     application.add_handler(CallbackQueryHandler(handle_menu_callback, pattern="^menu_logs$|^menu_sheet$"))
@@ -1896,18 +2404,20 @@ def main():
     application.add_handler(CallbackQueryHandler(refresh_sheet_access_callback, pattern="^refresh_sheet_access$"))
     application.add_handler(CallbackQueryHandler(handle_menu_selection, pattern="^menu_update_sheet$|^menu_text_post$|^menu_vector_db$|^menu_workflow$|^menu_logs$|^menu_sheet$"))
     
-    # Add handler for reel selection
-    application.add_handler(CallbackQueryHandler(handle_reel_selection, pattern="^reel_\d+$"))
+    # Note: Reel selection is now handled by the script editing conversation handler above
     
     # Add handler for HeyGen confirmation
     application.add_handler(CallbackQueryHandler(handle_heygen_confirmation, pattern="^(heygen_proceed_audio_parts|heygen_cancel|upload_to_youtube|generate_another)$"))
+    
+    # Add handler for "choose_another_reel" callback
+    application.add_handler(CallbackQueryHandler(handle_choose_another_reel, pattern="^choose_another_reel$"))
     
     # Add fallback handler for messages outside conversations
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text))
     
     # Register the error handler
     application.add_error_handler(error_handler)
-    
+
     # Run the bot until the user presses Ctrl-C
     application.run_polling()
 

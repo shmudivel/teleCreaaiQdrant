@@ -66,3 +66,8 @@ wheels/
 
 # ignore bustling-folio-439811-h8-539f8ab05fa7.json
 bustling-folio-439811-h8-539f8ab05fa7.json
+# Sensitive files
+youtube_token.json
+**/youtube_token.json
+*.token
+.env

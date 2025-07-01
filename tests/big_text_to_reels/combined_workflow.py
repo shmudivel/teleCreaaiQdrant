@@ -36,7 +36,7 @@ HEYGEN_API_KEY = "NzYzODNmNTI5ODYyNGMyYTg1NzFhNTNmOWY4M2Q4OTYtMTc0MDczMjczOQ=="
 SERVICE_ACCOUNT_PATH = "/Users/dahaniglikovdarkhan/Documents/repos/teleCreaaiQdrant/bustling-folio-439811-h8-539f8ab05fa7.json"
 
 # Anthropic API key (hard-coded)
-ANTHROPIC_API_KEY = "REMOVED_API_KEY"
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 # Set environment variable for Anthropic API
 os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY

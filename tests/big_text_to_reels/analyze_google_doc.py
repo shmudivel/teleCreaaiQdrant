@@ -11,7 +11,7 @@ import datetime
 SCOPES = ['https://www.googleapis.com/auth/documents.readonly']
 
 # Hard-coded Anthropic API key from env. file
-ANTHROPIC_API_KEY = "REMOVED_API_KEY"
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
 def extract_doc_id_from_url(url):
     """Extract the document ID from a Google Docs URL."""

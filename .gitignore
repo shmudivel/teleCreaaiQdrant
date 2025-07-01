@@ -71,3 +71,9 @@ youtube_token.json
 **/youtube_token.json
 *.token
 .env
+env.*
+**/env.*
+# API keys and secrets
+**/sk-*
+**/ANTHROPIC_API_KEY
+**/OPENAI_API_KEY

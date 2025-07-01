@@ -26,7 +26,7 @@ def generate_srt_from_audio(audio_file_path: str, words_per_subtitle: int = 1):
     try:
         # Ensure the OPENAI_API_KEY environment variable is set.
         client = OpenAI()
-        # REMOVED_OPENAI_API_KEY
+        # Set your OpenAI API key in the OPENAI_API_KEY environment variable
 
         print(f"Transcribing audio file: {audio_file_path}")
 

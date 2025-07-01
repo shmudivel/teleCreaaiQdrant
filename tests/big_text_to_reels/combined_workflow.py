@@ -25,8 +25,8 @@ from create_reel_scripts import ReelGenerator
 from reel_picker import load_metadata_files, analyze_viral_potential, select_top_reels, save_top_reels, get_client
 
 # YouTube OAuth credentials
-YOUTUBE_CLIENT_ID = "REMOVED_GOOGLE_CLIENT_ID"
-YOUTUBE_CLIENT_SECRET = "REMOVED_GOOGLE_CLIENT_SECRET"
+YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID")
+YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET")
 TOKEN_FILE = "youtube_token.json"
 
 # HeyGen API Key

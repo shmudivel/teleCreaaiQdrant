@@ -13,8 +13,8 @@ import google_auth_oauthlib.flow
 import io
 
 # YouTube OAuth credentials
-YOUTUBE_CLIENT_ID = "REMOVED_GOOGLE_CLIENT_ID"
-YOUTUBE_CLIENT_SECRET = "REMOVED_GOOGLE_CLIENT_SECRET"
+YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID")
+YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET")
 TOKEN_FILE = "youtube_token.json"
 
 # Disable OAuthlib's HTTPS verification for local development

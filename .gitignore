@@ -77,3 +77,13 @@ env.*
 **/sk-*
 **/ANTHROPIC_API_KEY
 **/OPENAI_API_KEY
+# Sensitive files and API keys
+credentials.json
+**/credentials.json
+service-account-*.json
+**/service-account-*.json
+**/GOOGLE_CLIENT_*
+**/GOCSPX-*
+# Backup files
+*.backup_*
+**/*.backup_*
